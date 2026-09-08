@@ -11,8 +11,6 @@ public enum JobState {
 
     /** A terminal job cannot be transitioned again. */
     public boolean isTerminal() {
-        // TODO 1: Return true exactly for terminal states.
-        // Explain why RETRY_WAIT is not terminal in your decision record.
-        throw new UnsupportedOperationException("TODO 1: implement JobState.isTerminal()");
+        return this == FINISHED || this == CANCELLED;
     }
 }
