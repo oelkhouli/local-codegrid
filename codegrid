@@ -1,0 +1,62 @@
+#!/bin/sh
+set -eu
+
+codegrid_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$codegrid_root"
+
+codegrid_action=${1:-help}
+if [ "$#" -gt 0 ]; then
+    shift
+fi
+
+case "$codegrid_action" in
+    help|--help|-h)
+        printf '%s\n' 'Local CodeGrid milestone 1' \
+            '  ./codegrid check   Run only input-validation checks' \
+            '  ./codegrid test    Run all tests (exercise TODOs initially fail)' \
+            '  ./codegrid up      Not implemented at this milestone'
+        exit 0
+        ;;
+    up)
+        printf '%s\n' 'The platform is not implemented yet. Start with ./codegrid check and ./codegrid test.' >&2
+        exit 2
+        ;;
+    check|test) ;;
+    *)
+        printf 'Unknown command: %s\n' "$codegrid_action" >&2
+        exit 2
+        ;;
+esac
+
+codegrid_engine=${CODEGRID_ENGINE:-}
+if [ -z "$codegrid_engine" ]; then
+    if command -v podman >/dev/null 2>&1; then
+        codegrid_engine=podman
+    elif command -v docker >/dev/null 2>&1; then
+        codegrid_engine=docker
+    else
+        printf '%s\n' 'Podman or Docker Engine with Compose is required. Alternatively use JDK 21 and Maven; see README.md.' >&2
+        exit 2
+    fi
+fi
+
+case "$codegrid_engine" in
+    podman|docker) ;;
+    *)
+        printf '%s\n' 'CODEGRID_ENGINE must be podman or docker.' >&2
+        exit 2
+        ;;
+esac
+
+if ! command -v "$codegrid_engine" >/dev/null 2>&1; then
+    printf 'Requested engine is not installed: %s\n' "$codegrid_engine" >&2
+    exit 2
+fi
+
+if [ "$codegrid_action" = check ]; then
+    set -- -Dtest=LifecycleInputTest test "$@"
+else
+    set -- test "$@"
+fi
+
+exec "$codegrid_engine" compose -f compose.dev.yaml run --rm --no-deps domain-tests "$@"
