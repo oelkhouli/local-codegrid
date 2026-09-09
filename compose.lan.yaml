@@ -1,0 +1,4 @@
+# Opt-in access for an SSH tunnel. This still binds only on the main host loopback.
+services:
+  api:
+    ports: ["127.0.0.1:8081:8080"]

@@ -1,62 +1,63 @@
 #!/bin/sh
 set -eu
-
 codegrid_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$codegrid_root"
-
 codegrid_action=${1:-help}
-if [ "$#" -gt 0 ]; then
-    shift
+[ "$#" -eq 0 ] || shift
+if [ "$codegrid_action" = help ]; then
+    printf '%s\n' 'Local CodeGrid' '  ./codegrid up                  Build and start the complete local platform' '  ./codegrid down                Stop; preserve all data' '  ./codegrid status              Show service status' '  ./codegrid logs                Follow service logs' '  ./codegrid credentials         Show local administrator credentials' '  ./codegrid test                Run backend unit tests in a development container' '  ./codegrid integration         Run PostgreSQL/Redis integration tests' '  ./codegrid scale N             Set the number of worker processes' '  ./codegrid backup              Write a PostgreSQL backup under artifacts/' '  ./codegrid restore FILE        Restore into an EMPTY database' '  ./codegrid reset --yes-delete-data  Permanently delete project volumes'
+    exit 0
 fi
-
-case "$codegrid_action" in
-    help|--help|-h)
-        printf '%s\n' 'Local CodeGrid milestone 1' \
-            '  ./codegrid check   Run only input-validation checks' \
-            '  ./codegrid test    Run all tests (exercise TODOs initially fail)' \
-            '  ./codegrid up      Not implemented at this milestone'
-        exit 0
-        ;;
-    up)
-        printf '%s\n' 'The platform is not implemented yet. Start with ./codegrid check and ./codegrid test.' >&2
-        exit 2
-        ;;
-    check|test) ;;
-    *)
-        printf 'Unknown command: %s\n' "$codegrid_action" >&2
-        exit 2
-        ;;
-esac
-
 codegrid_engine=${CODEGRID_ENGINE:-}
 if [ -z "$codegrid_engine" ]; then
-    if command -v podman >/dev/null 2>&1; then
-        codegrid_engine=podman
-    elif command -v docker >/dev/null 2>&1; then
-        codegrid_engine=docker
-    else
-        printf '%s\n' 'Podman or Docker Engine with Compose is required. Alternatively use JDK 21 and Maven; see README.md.' >&2
-        exit 2
-    fi
+    if command -v podman >/dev/null 2>&1; then codegrid_engine=podman
+    elif command -v docker >/dev/null 2>&1; then codegrid_engine=docker
+    else printf '%s\n' 'Install Podman with a Compose provider, or Docker Engine with Compose. Start the engine, then retry.' >&2;exit 2;fi
 fi
-
-case "$codegrid_engine" in
-    podman|docker) ;;
-    *)
-        printf '%s\n' 'CODEGRID_ENGINE must be podman or docker.' >&2
-        exit 2
+case "$codegrid_engine" in podman|docker) ;; *) printf '%s\n' 'CODEGRID_ENGINE must be podman or docker.' >&2;exit 2;; esac
+"$codegrid_engine" info >/dev/null
+"$codegrid_engine" compose version >/dev/null
+if [ "$codegrid_engine" = podman ]; then
+    ENGINE_SOCKET=${ENGINE_SOCKET:-$(podman info --format '{{.Host.RemoteSocket.Path}}')}
+else ENGINE_SOCKET=${ENGINE_SOCKET:-/var/run/docker.sock}; fi
+export ENGINE_SOCKET
+compose() { "$codegrid_engine" compose --env-file .env -f compose.yaml "$@"; }
+if [ ! -f .env ]; then
+    if [ "$codegrid_action" != up ]; then printf '%s\n' 'Run ./codegrid up first.' >&2;exit 2;fi
+    if [ "$codegrid_engine" = docker ]; then
+        codegrid_cpu=$(docker info --format '{{.NCPU}}');codegrid_memory=$(docker info --format '{{.MemTotal}}')
+    else codegrid_cpu=$(podman info --format '{{.Host.CPUs}}');codegrid_memory=$(podman info --format '{{.Host.MemTotal}}');fi
+    if [ "$codegrid_cpu" -lt 2 ] || [ "$codegrid_memory" -lt 4294967296 ]; then printf '%s\n' 'The engine needs at least 2 CPUs and 4 GiB RAM. On Windows/macOS, adjust the existing Linux VM allocation.' >&2;exit 2;fi
+    codegrid_slots=2;[ "$codegrid_cpu" -gt 2 ] || codegrid_slots=1
+    secret() { od -An -N24 -tx1 /dev/urandom | tr -d ' \n'; }
+    umask 077
+    codegrid_temp=$(mktemp .env.XXXXXX)
+    { printf 'POSTGRES_ADMIN_PASSWORD=%s\n' "$(secret)";printf 'DATABASE_PASSWORD=%s\n' "$(secret)";printf 'REDIS_PASSWORD=%s\n' "$(secret)";printf 'ADMIN_PASSWORD=%s\n' "$(secret)";printf 'NODE_TOKEN=%s\n' "$(secret)";printf 'NODE_ID=local\nNODE_CPU=%s\nNODE_MEMORY=%s\nNODE_SLOTS=%s\nPUBLIC_ORIGIN=http://127.0.0.1:8080\nWEB_PORT=8080\n' "$((codegrid_slots*1000))" "$((codegrid_slots*536870912))" "$codegrid_slots"; } > "$codegrid_temp"
+    mv "$codegrid_temp" .env
+fi
+case "$codegrid_action" in
+    up)
+        printf '%s\n' 'Building CodeGrid and its four language images. The first build downloads public dependencies.'
+        compose --profile build build runner-java runner-python runner-cpp runner-javascript api worker web
+        compose up -d --scale worker=2 postgres redis api reaper worker web prometheus grafana
+        printf '%s\n' 'Waiting for the API and sandbox enforcement checks…'
+        codegrid_ready=0
+        for codegrid_try in $(seq 1 120); do
+            if compose exec -T worker curl --fail --silent http://localhost:9102/health >/dev/null 2>&1 && compose exec -T reaper curl --fail --silent http://localhost:9102/health >/dev/null 2>&1 && compose exec -T web wget -q --spider http://127.0.0.1:8080/; then codegrid_ready=1;break;fi
+            sleep 1
+        done
+        if [ "$codegrid_ready" -ne 1 ]; then compose logs --tail=60 api worker reaper;printf '%s\n' 'Startup checks failed; see logs above. Required isolation limits were not disabled.' >&2;exit 1;fi
+        printf '%s\n' 'CodeGrid: http://127.0.0.1:8080' 'Grafana: http://127.0.0.1:3000' 'Administrator: admin' 'Run ./codegrid credentials to display the generated password.'
         ;;
+    credentials) printf '%s\n' 'Username: admin';sed -n 's/^ADMIN_PASSWORD=/Password: /p' .env;;
+    down) compose down;;
+    status) compose ps;;
+    logs) compose logs --tail=100 -f "$@";;
+    test|check) compose --profile test run --build --rm tests;;
+    integration) compose --profile test run --build --rm tests mvn --batch-mode --no-transfer-progress -f backend/pom.xml -Pintegration verify;;
+    scale) codegrid_workers=${1:?Supply a worker count from 1 to 8};case "$codegrid_workers" in [1-8]) ;;*) printf '%s\n' 'Worker count must be 1–8.' >&2;exit 2;;esac;compose up -d --no-deps --scale "worker=$codegrid_workers" worker;;
+    backup) umask 077;mkdir -p artifacts;codegrid_backup="artifacts/codegrid-$(date -u +%Y%m%dT%H%M%SZ).dump";compose exec -T postgres pg_dump -U codegrid -d codegrid -Fc > "$codegrid_backup";printf 'Backup written to %s\n' "$codegrid_backup";;
+    restore) codegrid_backup=${1:?Supply a backup file};[ -f "$codegrid_backup" ] || exit 2;codegrid_tables=$(compose exec -T postgres psql -U codegrid -d codegrid -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'");if [ "$codegrid_tables" -ne 0 ];then printf '%s\n' 'Restore requires an empty database; see docs/operations.md.' >&2;exit 2;fi;compose exec -T postgres pg_restore -U codegrid -d codegrid --role=codegrid_app --no-owner --exit-on-error < "$codegrid_backup";;
+    reset) if [ "${1:-}" != --yes-delete-data ];then printf '%s\n' 'Reset permanently deletes project data. To confirm, use ./codegrid reset --yes-delete-data' >&2;exit 2;fi;compose down --volumes;;
+    *) printf 'Unknown command: %s\n' "$codegrid_action" >&2;exit 2;;
 esac
-
-if ! command -v "$codegrid_engine" >/dev/null 2>&1; then
-    printf 'Requested engine is not installed: %s\n' "$codegrid_engine" >&2
-    exit 2
-fi
-
-if [ "$codegrid_action" = check ]; then
-    set -- -Dtest=LifecycleInputTest test "$@"
-else
-    set -- test "$@"
-fi
-
-exec "$codegrid_engine" compose -f compose.dev.yaml run --rm --no-deps domain-tests "$@"

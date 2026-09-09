@@ -1,34 +1,22 @@
-# Starter verification — September 8, 2026
+# Verification record
 
-This is an intentionally incomplete learning starter, not a working execution platform.
+This file separates implemented checks from executed evidence. Do not infer a passing runtime from the presence of a test or workflow.
 
-## Checks actually performed
+## Executed in the implementation workspace
 
-- Parsed both Maven POM files as XML.
-- Parsed the Compose YAML and checked its read-only source/build arrangement, pinned image reference, absence of published ports, and default test command.
-- Checked POSIX shell syntax for both scripts.
-- Exercised launcher help, unsupported commands and invalid-engine rejection.
-- Exercised launcher argument forwarding and nonzero exit-code propagation with an explicitly labeled test double. This did not start containers.
-- Compiled all three production Java files and all three JUnit test files using OpenJDK 17.0.20 with `--release 17`, against the JUnit Platform Console Standalone 1.13.4 distribution.
-- Ran `LifecycleInputTest`: **2 passed, 0 failed**.
-- Ran the complete discovered suite: **16 tests, 2 passed, 14 expected failures, 0 skipped**. Each failure traces to a marked TODO, including the incorrect exception type reported by the illegal-transition test while the placeholder is present.
+- Maven packaged all three Java modules and their executable API/worker jars. **37 unit tests passed**: 28 domain cases and 9 worker cases, including a race between two separate JVMs for one shared ledger slot.
+- The available workspace JDK is **17**, so this local Maven run explicitly used `-Dmaven.compiler.release=17`. The project and container/CI targets are Java **21**. A Java 21 integration run is a separate gate.
+- `npm ci` and `npm run build` completed with strict TypeScript checking and a production Vite build.
+- All 12 public base-image manifest digests were resolved from their registries and recorded in `infra/images.lock.json`.
 
-The methods intentionally throw `UnsupportedOperationException` until the student replaces them. That is an honest exercise marker, not production behavior. Invalid transitions in the completed implementation must use `IllegalStateException` as specified.
+## Implemented, requiring a real container host
 
-## Checks not completed here
+- `ControlPlaneIT`: 11 integration scenarios using actual PostgreSQL and Redis, including parallel idempotency, scheduler budget races, stale leases, completion/cancel races, ordered duplicate log delivery, and HTTP authentication/CSRF checks.
+- `scripts/system_test.py --faults`: four languages, bounded adversarial isolation cases, worker SIGKILL recovery and duplicate notification delivery.
+- Playwright: desktop execution/history/log replay/lessons and mobile layout with inert HTML-shaped program output.
+- Open-loop benchmark client: admission and execution outcomes, dispatch lag, throughput and p50/p95; p99 is withheld when fewer than 1,000 terminal observations exist.
+- Compose one-command launch, Java 21 packaged images, Podman compatibility, multi-computer SSH profile, and backup/restore.
 
-The project targets Java 21. Neither a JDK 21 executable nor Podman/Docker was available in the verification environment, so the Java 21 container command has **not** been end-to-end verified. Source compatibility was checked using Java 17 because these files use no newer language features; that does not substitute for testing the intended build environment.
+The implementation workspace has no Docker/Podman daemon, so these deployment checks have not been executed here. The public CI workflow runs the Docker/Java 21/integration/browser/fault gates on a real Ubuntu runner. Record its actual conclusion and run URL here after it completes; do not label this release fully runtime-verified before that evidence exists. A local Chromium download also failed at the browser CDN, so no screenshot was fabricated.
 
-An attempted Maven 3.9.11 build could not resolve the JUnit BOM because Maven encountered a DNS failure for Maven Central in this environment. The Java/JUnit checks above were performed separately using the console distribution downloaded from Maven Central. They do not claim that the full Maven resolution/plugin lifecycle ran successfully here.
-
-The pinned Maven/Temurin image index and amd64/arm64 variants were confirmed in the official image metadata. Metadata availability does not prove an image has no vulnerabilities or that a particular Compose provider will run it correctly.
-
-## First checks on your machine
-
-1. Run `./codegrid check` with the documented engine/Compose prerequisites. Expect two passing tests.
-2. Run `./codegrid test`. Expect the unfinished exercise checks to fail.
-3. Implement the two methods, add your own tests, and rerun the full suite.
-
-If the first command fails before tests run, send the exact error. We will fix the environment/build issue separately from your lifecycle implementation.
-
-No compiler sandbox, real lease, database concurrency, resource isolation, live API or performance benchmark has been implemented or validated in this milestone.
+No latency, throughput, p99, scaling gain, security guarantee, or multi-host result is claimed without a corresponding run. The [benchmark targets](benchmarks.md) and [roadmap criteria](roadmap.md) remain experiments to execute on the intended hardware.

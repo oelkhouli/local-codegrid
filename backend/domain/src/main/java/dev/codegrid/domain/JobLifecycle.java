@@ -2,25 +2,29 @@ package dev.codegrid.domain;
 
 import java.util.Objects;
 
-/**
- * Pure state-transition rules. No clocks, database, mutation, or external calls.
- * Later, PostgreSQL transactions must enforce ownership and concurrency too.
- */
+/** Pure lifecycle policy. A database transaction must also check ownership and fencing. */
 public final class JobLifecycle {
+  public JobState transition(JobState current, JobEvent event) {
+    Objects.requireNonNull(current, "current");
+    Objects.requireNonNull(event, "event");
+    if (current.isTerminal()) throw new IllegalStateException("Terminal decisions are immutable");
+    if (event == JobEvent.CANCEL) return JobState.CANCELLED;
+    if (event == JobEvent.DEADLINE_REACHED) return JobState.FINISHED;
+    return switch (event) {
+      case ASSIGN ->
+          require(current == JobState.QUEUED || current == JobState.RETRY_WAIT, JobState.LEASED);
+      case START -> require(current == JobState.LEASED, JobState.RUNNING);
+      case COMPLETE -> require(current == JobState.RUNNING, JobState.FINISHED);
+      case RETRYABLE_FAILURE ->
+          require(current == JobState.LEASED || current == JobState.RUNNING, JobState.RETRY_WAIT);
+      case RETRIES_EXHAUSTED ->
+          require(current == JobState.LEASED || current == JobState.RUNNING, JobState.FINISHED);
+      default -> throw new IllegalStateException("Illegal lifecycle event");
+    };
+  }
 
-    /**
-     * Returns the next state without changing any shared object.
-     *
-     * @throws NullPointerException if either argument is null
-     * @throws IllegalStateException if the event is illegal in this state
-     */
-    public JobState transition(JobState current, JobEvent event) {
-        Objects.requireNonNull(current, "current");
-        Objects.requireNonNull(event, "event");
-
-        // TODO 2: Implement the contract in docs/lessons/01-job-lifecycle.md.
-        // Reject terminal states and disallowed event/state combinations.
-        // Do not silently leave an invalid transition in the current state.
-        throw new UnsupportedOperationException("TODO 2: implement JobLifecycle.transition()");
-    }
+  private JobState require(boolean legal, JobState next) {
+    if (!legal) throw new IllegalStateException("Illegal state/event combination");
+    return next;
+  }
 }

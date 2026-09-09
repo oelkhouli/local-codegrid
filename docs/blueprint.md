@@ -1,3 +1,5 @@
+> Historical planning document. The completed local implementation differs in several deliberate ways; use [architecture.md](architecture.md), [openapi.yaml](openapi.yaml), and [verification.md](verification.md) for current behavior and evidence.
+
 # Local CodeGrid — project blueprint and mentoring plan
 
 Design date: September 8, 2026. This document supersedes the earlier cloud-oriented scope. It describes a proposed system; the application, commands and performance results have not been implemented or measured yet.

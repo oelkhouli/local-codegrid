@@ -1,0 +1,38 @@
+# Additional existing Linux computer. Use a distinct node token and ledger per engine.
+name: local-codegrid-node
+x-node: &node
+  image: local-codegrid/worker:1
+  build: {context: ., dockerfile: backend/Dockerfile, target: worker}
+  network_mode: host
+  environment: &env
+    API_URL: http://127.0.0.1:18081
+    NODE_ID: ${NODE_ID:?Register this node first}
+    NODE_TOKEN: ${NODE_TOKEN:?Register this node first}
+    CODEGRID_ENGINE: docker
+    DOCKER_HOST: unix:///var/run/docker.sock
+    LEDGER_PATH: /ledger
+    METRICS_BIND: 127.0.0.1
+    METRICS_PORT: 9102
+  volumes:
+    - ${ENGINE_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+    - node-ledger:/ledger
+  read_only: true
+  tmpfs: [/tmp:size=33554432]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true", "label=disable"]
+  mem_limit: 256m
+  cpus: 0.5
+  pids_limit: 128
+  restart: unless-stopped
+  healthcheck: {test: [CMD, curl, --fail, --silent, http://127.0.0.1:9102/health], interval: 5s, timeout: 3s, retries: 20, start_period: 60s}
+services:
+  worker: *node
+  reaper:
+    <<: *node
+    environment:
+      <<: *env
+      WORKER_MODE: reaper
+      METRICS_PORT: 9103
+    healthcheck: {test: [CMD, curl, --fail, --silent, http://127.0.0.1:9103/health], interval: 5s, timeout: 3s, retries: 20}
+volumes:
+  node-ledger:

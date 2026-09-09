@@ -1,3 +1,5 @@
+> Historical first-milestone exercise. The reference implementation is now supplied; start the current [15-lesson course](README.md), or use this original exercise on a practice branch.
+
 # Lesson 1: a job is a small state machine
 
 By the end of this exercise you should be able to answer: "Can this event legally change this job's state?" You are not implementing the scheduler or proving distributed safety yet.
