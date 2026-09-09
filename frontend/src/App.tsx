@@ -211,7 +211,7 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
               : register
                 ? "Create account"
                 : "Open workspace"}{" "}
-            <span>→</span>
+            <span aria-hidden="true">→</span>
           </button>
           <button
             className="text-button full"
@@ -770,7 +770,7 @@ export default function App() {
                         : draft.mode === "BENCHMARK"
                           ? "Start benchmark"
                           : "Run tests"}
-                      <span>▷</span>
+                      <span aria-hidden="true">▷</span>
                     </button>
                   </div>
                 </section>

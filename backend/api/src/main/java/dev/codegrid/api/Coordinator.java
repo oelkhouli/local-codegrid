@@ -14,6 +14,24 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class Coordinator {
+  private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(Coordinator.class);
+  private final java.util.concurrent.atomic.AtomicLong lastErrorLog =
+      new java.util.concurrent.atomic.AtomicLong();
+
+  private void report(Exception error) {
+    long now = System.nanoTime(), previous = lastErrorLog.get();
+    if (now - previous > 10_000_000_000L && lastErrorLog.compareAndSet(previous, now)) {
+      // Frame names identify failures without printing SQL parameters, tokens or submitted source.
+      String frames =
+          Arrays.stream(error.getStackTrace())
+              .filter(f -> f.getClassName().startsWith("dev.codegrid."))
+              .limit(4)
+              .map(Object::toString)
+              .collect(java.util.stream.Collectors.joining("; "));
+      LOG.warn("coordinator_failure type={} frames={}", error.getClass().getSimpleName(), frames);
+    }
+  }
+
   private final JdbcTemplate db;
   private final TransactionTemplate tx;
   private final WorkerService workers;
@@ -50,6 +68,7 @@ public class Coordinator {
       for (int i = 0; i < 8; i++) if (!dispatch()) break;
     } catch (Exception e) {
       metrics.counter("codegrid.coordinator.errors").increment();
+      report(e);
     }
   }
 
@@ -234,6 +253,7 @@ WHERE NOT n.quarantined AND n.heartbeat>clock_timestamp()-interval '10 seconds'
           });
     } catch (Exception e) {
       metrics.counter("codegrid.outbox.failures").increment();
+      report(e);
     }
   }
 
@@ -248,6 +268,7 @@ WHERE NOT n.quarantined AND n.heartbeat>clock_timestamp()-interval '10 seconds'
               + " created_at<clock_timestamp()-interval '30 days' LIMIT 1000)");
     } catch (Exception e) {
       metrics.counter("codegrid.coordinator.errors").increment();
+      report(e);
     }
   }
 }

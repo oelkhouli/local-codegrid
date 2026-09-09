@@ -47,4 +47,4 @@ class Client:
             if result['state'] in ('FINISHED', 'CANCELLED'):
                 return result
             time.sleep(0.4)
-        raise TimeoutError('Job did not finish: ' + job)
+        raise TimeoutError('Job did not finish: ' + job + ' state=' + result['state'] + ' generation=' + str(result['generation']) + ' attempts=' + json.dumps([{k:a[k] for k in ('generation','node_id','state','cleaned')} for a in result['attempts']]))

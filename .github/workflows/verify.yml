@@ -1,8 +1,10 @@
 name: Verify Local CodeGrid
 on:
   pull_request:
+    paths-ignore: ["docs/**", "README.md", "THIRD_PARTY_NOTICES.md", "LICENSE"]
   push:
     branches: [main]
+    paths-ignore: ["docs/**", "README.md", "THIRD_PARTY_NOTICES.md", "LICENSE"]
   workflow_dispatch:
 permissions:
   contents: read

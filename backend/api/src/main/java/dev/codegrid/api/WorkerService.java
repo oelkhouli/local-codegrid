@@ -305,7 +305,7 @@ ON CONFLICT(node_id,language) DO UPDATE SET samples=runtime_history.samples+1,ew
         .record(Duration.ofMillis(duration));
   }
 
-  void retryOrFinish(Map<String, Object> row, UUID job, String reason) {
+  public void retryOrFinish(Map<String, Object> row, UUID job, String reason) {
     int attempts = ((Number) row.get("generation")).intValue();
     Instant now = jobs.now();
     if (RetryPolicy.mayRetry(attempts, now, JobService.instant(row.get("deadline")))) {
@@ -326,7 +326,7 @@ ON CONFLICT(node_id,language) DO UPDATE SET samples=runtime_history.samples+1,ew
           now.isBefore(JobService.instant(row.get("deadline"))) ? "INFRA_ERROR" : "TIME_LIMIT");
   }
 
-  void finish(Map<String, Object> row, UUID job, String verdict) {
+  public void finish(Map<String, Object> row, UUID job, String verdict) {
     JobState current = JobState.valueOf(row.get("state").toString());
     JobEvent event =
         !jobs.now().isBefore(JobService.instant(row.get("deadline")))

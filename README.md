@@ -38,7 +38,7 @@ The launcher generates private local secrets, builds all four compiler images, s
 
 ## Try it
 
-Select Python and run the included `print(6 * 7)` example with expected output `42` followed by a newline. Switch languages, introduce a compiler error, and watch the event timeline. Benchmark mode performs **three fresh compile-and-run repetitions**, not a warmed microbenchmark.
+Select Python and run the included addition example with input `12 30` and expected output `42` followed by a newline. Switch languages, introduce a compiler error, and watch the event timeline. Benchmark mode performs **three fresh compile-and-run repetitions**, not a warmed microbenchmark.
 
 ```sh
 ./codegrid scale 3                         # more worker processes, same node budget

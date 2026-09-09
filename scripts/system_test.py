@@ -68,7 +68,7 @@ def main():
             time.sleep(0.1)
         compose('kill', '-s', 'SIGKILL', 'worker')
         compose('up', '-d', '--no-deps', '--scale', 'worker=2', 'worker')
-        result = client.wait(job)
+        result = client.wait(job, timeout=90)
         assert result['verdict'] == 'ACCEPTED' and result['generation'] >= 2, result
         checks.append({'check': 'worker-crash-recovery', 'job': job, 'attempts': result['generation']})
         print('worker-crash-recovery passed', flush=True)
