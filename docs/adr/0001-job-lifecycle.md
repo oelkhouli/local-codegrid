@@ -1,33 +1,17 @@
-# ADR 0001: job lifecycle
+# ADR 0001: explicit job lifecycle
 
-Status: proposed — complete this in your own words after the exercise.
+Status: accepted in the completed reference implementation.
 
-## Context
+A submission is immutable source plus test data. A job is a requested run of that submission. An attempt is one leased execution generation. The lifecycle policy is a pure function from current state and event to next state; database services separately enforce ownership, row locking and fencing.
 
-TODO: Explain submission, job and attempt using one example of your own.
+`FINISHED` and `CANCELLED` are terminal. `FINISHED` means the platform has made its final decision, so a compiler error, wrong answer or timeout can legitimately finish a job. The verdict says what happened. Illegal transitions throw; silently accepting them would conceal concurrency and protocol defects.
 
-## Decisions
+Every active state can be cancelled or reach its overall deadline. Assignment applies only to QUEUED/RETRY_WAIT; start applies to LEASED; ordinary completion applies to RUNNING. Infrastructure failure can move LEASED/RUNNING to RETRY_WAIT until the three-attempt budget or absolute deadline is exhausted. See `JobLifecycle` for the complete transition table.
 
-1. TODO: Which states are terminal, and what invariant does terminality protect?
-2. TODO: Why can a compiler error still produce a FINISHED job?
-3. TODO: Why should an invalid transition throw instead of silently doing nothing?
-4. TODO: Which responsibilities are intentionally absent from this pure function?
-5. TODO: How can an HTTP cancellation endpoint be idempotent while the domain rejects a new transition from CANCELLED?
+The HTTP cancellation endpoint can be idempotent while the domain rejects further transitions from CANCELLED: the service returns an existing terminal decision without requesting another transition. Cancellation and completion lock the same PostgreSQL job row, so only one terminal decision commits.
 
-## Failure reasoning
+A worker with an old generation cannot renew, log or complete after a new generation is assigned. The pure lifecycle cannot determine that by itself: the service must check node/worker identity, current generation, active state, lease time and both deadlines in the transaction. There may still be duplicate physical execution; there is one accepted final decision.
 
-TODO: Describe worker A/generation 7, lease loss, worker B/generation 8, and A's late success. Explain what this Java function cannot check and which conditions a future atomic database write must verify.
+Workers on one engine share the node resource budget and a persistent file-lock ledger. Expiring a lease does not prove its container stopped. Cleanup must fence late starts, confirm removal, then release reservations. This is deliberately separated from terminality.
 
-TODO: Explain why two workers on the same computer must share one resource budget rather than each reserving the whole machine.
-
-## Alternatives considered
-
-TODO: Explain why this exercise uses a pure function rather than an in-memory shared mutable Job object or a state-machine library. State a real tradeoff, not just a preference.
-
-## Evidence
-
-TODO: Record the test command/result and describe at least three tests you added, including the mistake each would catch.
-
-## Scope limitations
-
-TODO: Explicitly distinguish the serialized cancellation/completion unit tests from a future real database concurrency test.
+A pure policy avoids shared in-memory state across API replicas and makes the rules readable without a workflow library. The tradeoff is that services must explicitly apply it and retain the transactional invariants. Unit tests cover legal/illegal transitions and immutable terminal states; `ControlPlaneIT` tests real database races, and the deployed crash test checks the whole recovery path. Actual execution evidence is recorded in `docs/verification.md`.

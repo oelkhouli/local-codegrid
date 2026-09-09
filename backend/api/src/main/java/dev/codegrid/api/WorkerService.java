@@ -6,7 +6,6 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.*;
 import java.util.*;
-import java.util.random.RandomGenerator;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -311,7 +310,7 @@ ON CONFLICT(node_id,language) DO UPDATE SET samples=runtime_history.samples+1,ew
     if (RetryPolicy.mayRetry(attempts, now, JobService.instant(row.get("deadline")))) {
       new JobLifecycle()
           .transition(JobState.valueOf(row.get("state").toString()), JobEvent.RETRYABLE_FAILURE);
-      Instant ready = now.plus(RetryPolicy.delay(attempts, RandomGenerator.getDefault()));
+      Instant ready = now.plus(RetryPolicy.delay(attempts));
       db.update(
           "UPDATE jobs SET state='RETRY_WAIT',ready_at=? WHERE id=?", Timestamp.from(ready), job);
       events.emit(

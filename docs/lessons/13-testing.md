@@ -15,3 +15,5 @@ CI runs on a standard public-repository Linux runner, with scoped read permissio
 **Exercise:** choose one invariant, introduce a small defect on a temporary branch, and show which test detects it. Restore the implementation and explain why that test checks observable behavior rather than copying the algorithm.
 
 **Explain it:** “I test failure behavior at the boundary that enforces it: Java for pure rules, PostgreSQL for concurrency and the real runtime for isolation.”
+
+A real deployment defect showed why this matters: the full JDK passed retry tests, but the slim JRE lacked the implementation selected by `RandomGenerator.getDefault()`. After a worker crash, every recovery cycle threw an exception. `MinimalRuntimeRetryTest` runs a separate JVM restricted to `java.base` and reproduces that environment difference. The production jitter source now uses `ThreadLocalRandom`; random draws are not security tokens, and the exponential-backoff algorithm remains explicit.

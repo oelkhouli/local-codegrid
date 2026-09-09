@@ -164,7 +164,7 @@
       },
       "targets": [
         {
-          "expr": "codegrid_jobs_queued",
+          "expr": "max(codegrid_jobs_queued)",
           "legendFormat": "{{verdict}}{{language}}{{quantile}}",
           "refId": "A"
         }
@@ -198,7 +198,7 @@
       },
       "targets": [
         {
-          "expr": "codegrid_reservations_slots",
+          "expr": "max(codegrid_reservations_slots)",
           "legendFormat": "{{verdict}}{{language}}{{quantile}}",
           "refId": "A"
         }
@@ -232,7 +232,7 @@
       },
       "targets": [
         {
-          "expr": "codegrid_reservations_memory_bytes",
+          "expr": "max(codegrid_reservations_memory_bytes)",
           "legendFormat": "{{verdict}}{{language}}{{quantile}}",
           "refId": "A"
         }
@@ -266,7 +266,7 @@
       },
       "targets": [
         {
-          "expr": "codegrid_reservations_cpu_millicores / 1000",
+          "expr": "max(codegrid_reservations_cpu_millicores) / 1000",
           "legendFormat": "{{verdict}}{{language}}{{quantile}}",
           "refId": "A"
         }
@@ -300,9 +300,14 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(codegrid_jobs_retried_total[5m])) or sum(rate(codegrid_protocol_stale_total[5m]))",
-          "legendFormat": "{{verdict}}{{language}}{{quantile}}",
-          "refId": "A"
+          "refId": "A",
+          "expr": "sum(rate(codegrid_jobs_retried_total[5m]))",
+          "legendFormat": "Retries"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(codegrid_protocol_stale_total[5m]))",
+          "legendFormat": "Stale writes"
         }
       ],
       "fieldConfig": {
@@ -402,9 +407,14 @@
       },
       "targets": [
         {
-          "expr": "codegrid_nodes_quarantined or codegrid_outbox_pending",
-          "legendFormat": "{{verdict}}{{language}}{{quantile}}",
-          "refId": "A"
+          "refId": "A",
+          "expr": "max(codegrid_nodes_quarantined)",
+          "legendFormat": "Quarantined nodes"
+        },
+        {
+          "refId": "B",
+          "expr": "max(codegrid_outbox_pending)",
+          "legendFormat": "Pending outbox"
         }
       ],
       "fieldConfig": {

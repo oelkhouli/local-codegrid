@@ -11,6 +11,11 @@ public final class RetryPolicy {
     return attempts < MAX_ATTEMPTS && now.isBefore(deadline);
   }
 
+  public static Duration delay(int attempts) {
+    // ThreadLocalRandom lives in java.base; provider factories may need optional JDK modules.
+    return delay(attempts, java.util.concurrent.ThreadLocalRandom.current());
+  }
+
   /** Full jitter, persisted by the caller; never sleep while holding a reservation. */
   public static Duration delay(int attempts, RandomGenerator random) {
     long cap = Math.min(30_000L, 2_000L << Math.min(Math.max(attempts - 1, 0), 4));

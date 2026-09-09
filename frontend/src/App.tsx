@@ -382,8 +382,8 @@ export default function App() {
       const result = await post<{ id: string }>("/api/jobs", draft, {
         "Idempotency-Key": retry.current.key,
       });
-      retry.current = null;
       const next = await api<Job>("/api/jobs/" + result.id);
+      retry.current = null;
       selected.current = next.id;
       setJob(next);
       setResultTab("logs");

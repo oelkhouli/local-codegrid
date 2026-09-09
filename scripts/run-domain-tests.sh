@@ -8,6 +8,6 @@ cp /source/backend/domain/pom.xml /work/backend/domain/pom.xml
 cp -R /source/backend/domain/src /work/backend/domain/src
 
 exec mvn --batch-mode --no-transfer-progress \
-    -f /work/backend/pom.xml \
+    -f /work/backend/domain/pom.xml \
     -Dmaven.repo.local=/maven-cache/repository \
     "$@"
