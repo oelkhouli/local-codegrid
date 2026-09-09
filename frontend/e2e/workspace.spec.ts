@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { initial } from "../src/api";
 const password = readFileSync(new URL("../../.env", import.meta.url), "utf8")
   .split("\n")
   .find((l) => l.startsWith("ADMIN_PASSWORD="))!
@@ -63,4 +64,79 @@ test("mobile login and escaped program output remain usable", async ({
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+});
+
+test("switching accounts clears private drafts and ignores old job responses", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByLabel("Username", { exact: true }).fill("admin");
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Open workspace" }).click();
+  const privateSource = "# private to the first account\nprint(42)\n";
+  await page.getByLabel("Source code").fill(privateSource);
+  const accepted = page.waitForResponse(
+    (r) => r.url().endsWith("/api/jobs") && r.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "Run tests", exact: true }).click();
+  const { id } = await (await accepted).json();
+  await expect(page.getByLabel("Execution logs")).toContainText("42", {
+    timeout: 90000,
+  });
+  await page.getByRole("button", { name: /Run history/ }).click();
+
+  // Keep an authenticated response in flight across logout and a new login.
+  let release!: () => void;
+  let captured!: () => void;
+  let delivered!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const oldResponse = new Promise<void>((resolve) => {
+    captured = resolve;
+  });
+  const delivery = new Promise<void>((resolve) => {
+    delivered = resolve;
+  });
+  await page.route(`**/api/jobs/${id}`, async (route) => {
+    const response = await route.fetch();
+    captured();
+    await gate;
+    await route.fulfill({ response });
+    delivered();
+  });
+  await page.getByRole("button", { name: "Open →" }).first().click();
+  await oldResponse;
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page
+    .getByRole("button", { name: "New here? Create a local account" })
+    .click();
+  await page.getByLabel("Username", { exact: true }).fill(`e2e_${Date.now()}`);
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("local-test-password-2026");
+  await page
+    .getByRole("button", { name: "Create account", exact: true })
+    .click();
+  await expect(page.getByLabel("Source code")).toHaveValue(
+    initial("PYTHON").source,
+  );
+
+  const completed = page.waitForEvent("requestfinished", {
+    predicate: (r) => r.url().endsWith(`/api/jobs/${id}`),
+  });
+  release();
+  await delivery;
+  await completed;
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
+  await expect(page.getByLabel("Source code")).toHaveValue(
+    initial("PYTHON").source,
+  );
+  await page.getByRole("button", { name: /Run history/ }).click();
+  await expect(page.getByRole("button", { name: "Open →" })).toHaveCount(0);
 });

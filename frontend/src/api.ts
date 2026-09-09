@@ -68,13 +68,16 @@ export type LogEvent = {
   data: { stream?: string; text?: string; generation?: number };
 };
 let csrf = "";
+let sessionVersion = 0;
 export function setSession(user: User | null) {
+  sessionVersion++;
   csrf = user?.csrf ?? "";
 }
 export async function api<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const version = sessionVersion;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
@@ -90,7 +93,7 @@ export async function api<T>(
     });
     const data = await response.json();
     if (!response.ok) {
-      if (response.status === 401)
+      if (response.status === 401 && version === sessionVersion)
         window.dispatchEvent(new Event("session-expired"));
       throw new Error(data.error ?? `Request failed (${response.status})`);
     }

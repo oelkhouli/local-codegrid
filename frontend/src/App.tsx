@@ -250,16 +250,27 @@ export default function App() {
     logBox = useRef<HTMLPreElement>(null),
     numbers = useRef<HTMLPreElement>(null);
   const selected = useRef<string | null>(null);
+  // Invalidate old requests even when the same account signs in again.
+  const sessionEpoch = useRef(0);
   function login(u: User | null) {
+    sessionEpoch.current++;
     setSession(u);
     setUser(u);
-    if (!u) {
-      setJob(null);
-      setEvents([]);
-      setHistory([]);
-      setNodes([]);
-      setOverview(null);
-    }
+    selected.current = null;
+    retry.current = null;
+    setDraft(initial("PYTHON"));
+    setJob(null);
+    setEvents([]);
+    setHistory([]);
+    setNodes([]);
+    setOverview(null);
+    setBusy(false);
+    setError("");
+    setConnected(false);
+    setTab("workspace");
+    setResultTab("logs");
+    setChapter(null);
+    setLesson("");
   }
   useEffect(() => {
     api<User>("/api/session")
@@ -271,21 +282,25 @@ export default function App() {
     return () => window.removeEventListener("session-expired", expired);
   }, []);
   async function refresh() {
+    const epoch = sessionEpoch.current;
     const [h, n, o] = await Promise.all([
       api<Summary[]>("/api/jobs"),
       api<Node[]>("/api/nodes"),
       api<Overview>("/api/overview"),
     ]);
+    if (epoch !== sessionEpoch.current) return;
     setHistory(h);
     setNodes(n);
     setOverview(o);
   }
   useEffect(() => {
     if (!user) return;
+    const epoch = sessionEpoch.current;
     let alive = true;
     const update = () =>
       refresh().catch((e) => {
-        if (alive) setError((e as Error).message);
+        if (alive && epoch === sessionEpoch.current)
+          setError((e as Error).message);
       });
     void update();
     const timer = setInterval(update, 4000);
@@ -300,28 +315,32 @@ export default function App() {
   useEffect(() => {
     if (!job || !user) return;
     const id = job.id;
+    const epoch = sessionEpoch.current;
     let alive = true,
       cursor = 0,
       reconnect: ReturnType<typeof setTimeout>,
       socket: WebSocket;
     let delay = 500;
+    const current = () =>
+      alive && epoch === sessionEpoch.current && selected.current === id;
     setEvents([]);
     const updateJob = () =>
       api<Job>(`/api/jobs/${id}`)
         .then((j) => {
-          if (alive && selected.current === id) setJob(j);
+          if (current()) setJob(j);
         })
         .catch(() => {});
     function connect() {
-      if (!alive) return;
+      if (!current()) return;
       socket = new WebSocket(
         `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/jobs/${id}?after=${cursor}`,
       );
       socket.onopen = () => {
-        if (alive) setConnected(true);
+        if (current()) setConnected(true);
         delay = 500;
       };
       socket.onmessage = (e) => {
+        if (!current()) return;
         const event = JSON.parse(e.data) as LogEvent;
         if (event.seq <= cursor) return;
         cursor = event.seq;
@@ -332,7 +351,7 @@ export default function App() {
         }
       };
       socket.onclose = () => {
-        if (alive) {
+        if (current()) {
           setConnected(false);
           reconnect = setTimeout(connect, delay);
           delay = Math.min(10000, delay * 2);
@@ -373,6 +392,7 @@ export default function App() {
     };
   }, [chapter]);
   async function run() {
+    const epoch = sessionEpoch.current;
     setBusy(true);
     setError("");
     const payload = JSON.stringify(draft);
@@ -382,38 +402,47 @@ export default function App() {
       const result = await post<{ id: string }>("/api/jobs", draft, {
         "Idempotency-Key": retry.current.key,
       });
+      if (epoch !== sessionEpoch.current) return;
       const next = await api<Job>("/api/jobs/" + result.id);
+      if (epoch !== sessionEpoch.current) return;
       retry.current = null;
       selected.current = next.id;
       setJob(next);
       setResultTab("logs");
       await refresh();
     } catch (e) {
-      setError((e as Error).message);
+      if (epoch === sessionEpoch.current) setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (epoch === sessionEpoch.current) setBusy(false);
     }
   }
   async function open(id: string) {
+    const epoch = sessionEpoch.current;
     try {
       const next = await api<Job>("/api/jobs/" + id);
+      if (epoch !== sessionEpoch.current) return;
       selected.current = id;
       setJob(next);
       setDraft(next.submission);
       setTab("workspace");
       setError("");
     } catch (e) {
-      setError((e as Error).message);
+      if (epoch === sessionEpoch.current) setError((e as Error).message);
     }
   }
   async function cancel() {
     if (!job) return;
+    const id = job.id;
+    const epoch = sessionEpoch.current;
     try {
-      await post("/api/jobs/" + job.id + "/cancel");
-      setJob(await api<Job>("/api/jobs/" + job.id));
+      await post("/api/jobs/" + id + "/cancel");
+      if (epoch !== sessionEpoch.current) return;
+      const next = await api<Job>("/api/jobs/" + id);
+      if (epoch !== sessionEpoch.current) return;
+      if (selected.current === id) setJob(next);
       await refresh();
     } catch (e) {
-      setError((e as Error).message);
+      if (epoch === sessionEpoch.current) setError((e as Error).message);
     }
   }
   const online = nodes.reduce(
