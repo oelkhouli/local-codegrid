@@ -42,6 +42,13 @@ jobs:
         run: npm run test:e2e
       - name: Small load smoke sample (not p99 evidence)
         run: python3 scripts/benchmark.py --samples 32 --rate 0.5 --users 1 --output artifacts/ci-benchmark.json
+      - name: Diagnose a failed runtime gate
+        if: failure()
+        run: |
+          if [ -f .env ]; then
+            docker compose --env-file .env -f compose.yaml ps
+            docker compose --env-file .env -f compose.yaml logs --tail=80 api worker reaper web
+          fi
       - name: Write verification summary (no paid artifact storage)
         if: always()
         run: python3 scripts/ci_summary.py

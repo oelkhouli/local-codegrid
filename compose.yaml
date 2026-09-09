@@ -93,7 +93,7 @@ services:
     image: local-codegrid/web:1
     build: {context: ., dockerfile: frontend/Dockerfile}
     ports: ["127.0.0.1:${WEB_PORT:-8080}:8080"]
-    networks: [edge]
+    networks: [edge, ingress]
     mem_limit: 64m
     cpus: 0.25
     pids_limit: 64
@@ -123,7 +123,7 @@ services:
       GF_NEWS_NEWS_FEED_ENABLED: "false"
     ports: ["127.0.0.1:3000:3000"]
     volumes: [grafana-data:/var/lib/grafana, ./infra/grafana/provisioning:/etc/grafana/provisioning:ro, ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro]
-    networks: [observability]
+    networks: [observability, ingress]
     mem_limit: 256m
     cpus: 0.5
     pids_limit: 128
@@ -164,4 +164,5 @@ networks:
   control: {internal: true}
   edge: {internal: true}
   observability: {internal: true}
+  ingress: {}
   test: {}

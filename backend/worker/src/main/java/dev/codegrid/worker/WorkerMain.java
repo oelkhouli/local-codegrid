@@ -145,7 +145,7 @@ public class WorkerMain {
     UUID id = UUID.randomUUID();
     String name = SandboxPolicy.name(id, 1, 0);
     try {
-      runtime.create(id, 1, 0, System.currentTimeMillis() + 30000, image);
+      runtime.createProbe(id, System.currentTimeMillis() + 30000, image);
       var result =
           runtime.run(
               name,
@@ -395,6 +395,7 @@ public class WorkerMain {
   }
 
   private void reconcile() throws Exception {
+    runtime.removeExpiredProbes();
     for (var a : ledger.active())
       if (System.currentTimeMillis() >= a.path("deadline").asLong())
         try {

@@ -35,6 +35,16 @@ if [ ! -f .env ]; then
     { printf 'POSTGRES_ADMIN_PASSWORD=%s\n' "$(secret)";printf 'DATABASE_PASSWORD=%s\n' "$(secret)";printf 'REDIS_PASSWORD=%s\n' "$(secret)";printf 'ADMIN_PASSWORD=%s\n' "$(secret)";printf 'NODE_TOKEN=%s\n' "$(secret)";printf 'NODE_ID=local\nNODE_CPU=%s\nNODE_MEMORY=%s\nNODE_SLOTS=%s\nPUBLIC_ORIGIN=http://127.0.0.1:8080\nWEB_PORT=8080\n' "$((codegrid_slots*1000))" "$((codegrid_slots*536870912))" "$codegrid_slots"; } > "$codegrid_temp"
     mv "$codegrid_temp" .env
 fi
+host_ready() {
+    codegrid_origin=$(sed -n 's/^PUBLIC_ORIGIN=//p' .env)
+    if command -v curl >/dev/null 2>&1; then
+        curl --noproxy '*' --fail --silent --max-time 3 "$codegrid_origin/api/health" >/dev/null && curl --noproxy '*' --fail --silent --max-time 3 http://127.0.0.1:3000/api/health >/dev/null
+    else
+        codegrid_web_id=$(compose ps -q web)
+        codegrid_binding=$("$codegrid_engine" inspect --format '{{range (index .NetworkSettings.Ports "8080/tcp")}}{{.HostIp}}{{end}}' "$codegrid_web_id")
+        [ "$codegrid_binding" = 127.0.0.1 ]
+    fi
+}
 case "$codegrid_action" in
     up)
         printf '%s\n' 'Building CodeGrid and its four language images. The first build downloads public dependencies.'
@@ -43,7 +53,7 @@ case "$codegrid_action" in
         printf '%s\n' 'Waiting for the API and sandbox enforcement checks…'
         codegrid_ready=0
         for codegrid_try in $(seq 1 120); do
-            if compose exec -T worker curl --fail --silent http://localhost:9102/health >/dev/null 2>&1 && compose exec -T reaper curl --fail --silent http://localhost:9102/health >/dev/null 2>&1 && compose exec -T web wget -q --spider http://127.0.0.1:8080/; then codegrid_ready=1;break;fi
+            if compose exec -T worker curl --fail --silent http://localhost:9102/health >/dev/null 2>&1 && compose exec -T reaper curl --fail --silent http://localhost:9102/health >/dev/null 2>&1 && compose exec -T web wget -q --spider http://127.0.0.1:8080/ && host_ready; then codegrid_ready=1;break;fi
             sleep 1
         done
         if [ "$codegrid_ready" -ne 1 ]; then compose logs --tail=60 api worker reaper;printf '%s\n' 'Startup checks failed; see logs above. Required isolation limits were not disabled.' >&2;exit 1;fi

@@ -30,7 +30,19 @@ if (-not (Test-Path .env)) {
     $CodeGridSlots=2;if ($CodeGridCpu -le 2) { $CodeGridSlots=1 }
     function New-CodeGridSecret { $bytes=New-Object byte[] 24;$rng=[Security.Cryptography.RandomNumberGenerator]::Create();$rng.GetBytes($bytes);$rng.Dispose();return ([BitConverter]::ToString($bytes)).Replace('-','').ToLowerInvariant() }
     $lines=@("POSTGRES_ADMIN_PASSWORD=$(New-CodeGridSecret)","DATABASE_PASSWORD=$(New-CodeGridSecret)","REDIS_PASSWORD=$(New-CodeGridSecret)","ADMIN_PASSWORD=$(New-CodeGridSecret)","NODE_TOKEN=$(New-CodeGridSecret)",'NODE_ID=local',"NODE_CPU=$($CodeGridSlots*1000)","NODE_MEMORY=$($CodeGridSlots*536870912)","NODE_SLOTS=$CodeGridSlots",'PUBLIC_ORIGIN=http://127.0.0.1:8080','WEB_PORT=8080')
-    [IO.File]::WriteAllLines((Join-Path $PSScriptRoot '.env'),$lines,(New-Object Text.UTF8Encoding $false))
+    $CodeGridEnvPath=Join-Path $PSScriptRoot '.env'
+    [IO.File]::WriteAllLines($CodeGridEnvPath,$lines,(New-Object Text.UTF8Encoding $false))
+    if ($env:OS -eq 'Windows_NT') {
+        $CodeGridAcl=Get-Acl $CodeGridEnvPath
+        $CodeGridAcl.SetAccessRuleProtection($true,$false)
+        $CodeGridOwner=[Security.Principal.WindowsIdentity]::GetCurrent().User
+        $CodeGridRule=New-Object Security.AccessControl.FileSystemAccessRule($CodeGridOwner,'FullControl','Allow')
+        $CodeGridAcl.SetAccessRule($CodeGridRule)
+        Set-Acl -Path $CodeGridEnvPath -AclObject $CodeGridAcl
+    } else {
+        & chmod 600 $CodeGridEnvPath
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot protect generated credentials.' }
+    }
 }
 switch ($Action) {
     'up' {
@@ -42,7 +54,14 @@ switch ($Action) {
             & $CodeGridEngine compose --env-file .env -f compose.yaml exec -T worker curl --fail --silent http://localhost:9102/health 2>$null | Out-Null
             if ($LASTEXITCODE -eq 0) {
                 & $CodeGridEngine compose --env-file .env -f compose.yaml exec -T reaper curl --fail --silent http://localhost:9102/health 2>$null | Out-Null
-                if ($LASTEXITCODE -eq 0) { $CodeGridReady=$true;break }
+                if ($LASTEXITCODE -eq 0) {
+                    try {
+                        $CodeGridOrigin=(Get-Content .env | Where-Object { $_ -match '^PUBLIC_ORIGIN=' }).Split('=',2)[1]
+                        Invoke-WebRequest -UseBasicParsing -Uri "$CodeGridOrigin/api/health" -TimeoutSec 3 | Out-Null
+                        Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:3000/api/health' -TimeoutSec 3 | Out-Null
+                        $CodeGridReady=$true;break
+                    } catch { }
+                }
             }
             Start-Sleep -Seconds 1
         }

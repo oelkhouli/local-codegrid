@@ -9,7 +9,11 @@ This file separates implemented checks from executed evidence. Do not infer a pa
 - `npm ci` and `npm run build` completed with strict TypeScript checking and a production Vite build.
 - All 12 public base-image manifest digests were resolved from their registries and recorded in `infra/images.lock.json`.
 
-## Implemented, requiring a real container host
+## First real-host CI run
+
+[Run 34352834414](https://github.com/oelkhouli/local-codegrid/actions/runs/34352834414) at commit `608b62d` passed Java 21 unit/integration tests and the production frontend build. All services started and the workers passed their in-container enforcement probes. The first system request then failed because the web container, attached only to an internal bridge, had no reachable published loopback port. The deployment now gives only web/Grafana a separate ingress bridge and checks host reachability during startup. The database/control networks and submitted-code network restrictions remain enforced. A complete rerun is required.
+
+## Further deployment gates
 
 - `ControlPlaneIT`: 11 integration scenarios using actual PostgreSQL and Redis, including parallel idempotency, scheduler budget races, stale leases, completion/cancel races, ordered duplicate log delivery, and HTTP authentication/CSRF checks.
 - `scripts/system_test.py --faults`: four languages, bounded adversarial isolation cases, worker SIGKILL recovery and duplicate notification delivery.

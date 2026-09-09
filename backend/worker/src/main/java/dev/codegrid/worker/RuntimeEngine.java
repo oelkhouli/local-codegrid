@@ -79,6 +79,47 @@ public class RuntimeEngine {
     command(SandboxPolicy.create(engine, node, job, generation, index, deadline, image), 10);
   }
 
+  /** Enforcement probes are trusted, short lived, and tagged for cleanup after a startup crash. */
+  public void createProbe(UUID id, long deadline, String image) throws Exception {
+    var args = new ArrayList<>(SandboxPolicy.create(engine, node, id, 1, 0, deadline, image));
+    args.add(2, "--label=codegrid.probe=true");
+    command(args, 10);
+  }
+
+  public void removeExpiredProbes() throws Exception {
+    String ids =
+        command(
+            List.of(
+                engine,
+                "ps",
+                "--all",
+                "--quiet",
+                "--filter",
+                "label=codegrid.node=" + node,
+                "--filter",
+                "label=codegrid.probe=true"),
+            8);
+    for (String id : ids.split("\\s+")) {
+      if (id.isBlank()) continue;
+      if (!id.matches("[a-f0-9]{12,64}")) throw new IOException("Invalid probe container ID");
+      try {
+        long deadline =
+            Long.parseLong(
+                command(
+                    List.of(
+                        engine,
+                        "inspect",
+                        "--format",
+                        "{{index .Config.Labels \"codegrid.deadline\"}}",
+                        id),
+                    3));
+        if (deadline <= System.currentTimeMillis()) remove(id);
+      } catch (IOException ignored) {
+        // Normal worker cleanup can remove a probe between listing and inspection. Retry next tick.
+      }
+    }
+  }
+
   public void remove(String name) throws Exception {
     try {
       command(List.of(engine, "rm", "--force", name), 8);
