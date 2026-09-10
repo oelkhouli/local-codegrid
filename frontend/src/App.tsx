@@ -14,6 +14,7 @@ import {
   type Overview,
   type Submission,
   type LogEvent,
+  type Problem,
 } from "./api";
 
 const terminal = (state: string) => ["FINISHED", "CANCELLED"].includes(state);
@@ -237,6 +238,7 @@ export default function App() {
   const [draft, setDraft] = useState<Submission>(initial("PYTHON")),
     [job, setJob] = useState<Job | null>(null),
     [history, setHistory] = useState<Summary[]>([]),
+    [problems, setProblems] = useState<Problem[]>([]),
     [nodes, setNodes] = useState<Node[]>([]),
     [overview, setOverview] = useState<Overview | null>(null);
   const [error, setError] = useState(""),
@@ -262,6 +264,7 @@ export default function App() {
     setJob(null);
     setEvents([]);
     setHistory([]);
+    setProblems([]);
     setNodes([]);
     setOverview(null);
     setBusy(false);
@@ -293,6 +296,17 @@ export default function App() {
     setNodes(n);
     setOverview(o);
   }
+  useEffect(() => {
+    if (!user) return;
+    const epoch = sessionEpoch.current;
+    api<Problem[]>("/api/problems")
+      .then((items) => {
+        if (epoch === sessionEpoch.current) setProblems(items);
+      })
+      .catch((e) => {
+        if (epoch === sessionEpoch.current) setError((e as Error).message);
+      });
+  }, [user]);
   useEffect(() => {
     if (!user) return;
     const epoch = sessionEpoch.current;
@@ -457,6 +471,37 @@ export default function App() {
   const attempt = job?.attempts.at(-1);
   const results = attempt?.result?.cases ?? [];
   const sourceBytes = new TextEncoder().encode(draft.source).length;
+  const activeProblem = problems.find((p) => p.slug === draft.problem);
+  function chooseProblem(problem: Problem | null) {
+    if (!problem) {
+      setDraft(initial(draft.language));
+      setJob(null);
+      setEvents([]);
+      return;
+    }
+    setDraft({
+      language: draft.language,
+      source: problem.starterCode[draft.language],
+      tests: problem.publicTests,
+      mode: "RUN",
+      problem: problem.slug,
+    });
+    setJob(null);
+    setEvents([]);
+    setError("");
+  }
+  function chooseLanguage(language: Language) {
+    if (!activeProblem) {
+      setDraft(initial(language));
+      return;
+    }
+    setDraft({
+      ...draft,
+      language,
+      source: activeProblem.starterCode[language],
+      mode: "RUN",
+    });
+  }
   if (loading)
     return (
       <div className="loading">
@@ -582,11 +627,11 @@ export default function App() {
               <button
                 className="secondary"
                 onClick={() => {
-                  setDraft(initial(draft.language));
+                  chooseProblem(activeProblem ?? null);
                   setError("");
                 }}
               >
-                ↺ Reset example
+                ↺ Reset {activeProblem ? "starter" : "example"}
               </button>
             )}
           </div>
@@ -624,6 +669,62 @@ export default function App() {
           )}
           {tab === "workspace" && (
             <>
+              <section
+                className="challenge-shelf"
+                aria-labelledby="challenge-heading"
+              >
+                <div className="challenge-heading">
+                  <div>
+                    <p className="eyebrow">PRACTICE MODE</p>
+                    <h2 id="challenge-heading">Choose a coding challenge</h2>
+                  </div>
+                  <span className="subtle">
+                    Examples are visible · additional tests stay server-side
+                  </span>
+                </div>
+                <div className="challenge-list">
+                  <button
+                    className={
+                      !activeProblem
+                        ? "challenge-card selected"
+                        : "challenge-card"
+                    }
+                    aria-pressed={!activeProblem}
+                    onClick={() => chooseProblem(null)}
+                  >
+                    <strong>Free workspace</strong>
+                    <span>Your own input and expected output</span>
+                  </button>
+                  {problems.map((problem) => (
+                    <button
+                      key={problem.slug}
+                      className={
+                        activeProblem?.slug === problem.slug
+                          ? "challenge-card selected"
+                          : "challenge-card"
+                      }
+                      aria-pressed={activeProblem?.slug === problem.slug}
+                      onClick={() => chooseProblem(problem)}
+                    >
+                      <em>{problem.difficulty}</em>
+                      <strong>{problem.title}</strong>
+                      <span>
+                        {problem.publicTests.length} visible · hidden coverage
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                {activeProblem && (
+                  <div className="challenge-description">
+                    <span
+                      className={`difficulty ${activeProblem.difficulty.toLowerCase()}`}
+                    >
+                      {activeProblem.difficulty}
+                    </span>
+                    <p>{activeProblem.description}</p>
+                  </div>
+                )}
+              </section>
               <div className="workbench">
                 <section className="panel editor-panel">
                   <div className="panel-heading">
@@ -644,7 +745,7 @@ export default function App() {
                         className={
                           draft.language === language ? "selected" : ""
                         }
-                        onClick={() => setDraft(initial(language))}
+                        onClick={() => chooseLanguage(language)}
                       >
                         {labels[language]}
                       </button>
@@ -693,7 +794,9 @@ export default function App() {
                     <h2>Test cases</h2>
                     <button
                       className="text-button"
-                      disabled={draft.tests.length >= 3}
+                      disabled={
+                        Boolean(activeProblem) || draft.tests.length >= 3
+                      }
                       onClick={() =>
                         setDraft({
                           ...draft,
@@ -712,7 +815,7 @@ export default function App() {
                             <span>{String(index + 1).padStart(2, "0")}</span>{" "}
                             Test case
                           </strong>
-                          {draft.tests.length > 1 && (
+                          {!activeProblem && draft.tests.length > 1 && (
                             <button
                               className="icon-button"
                               aria-label={`Remove case ${index + 1}`}
@@ -735,6 +838,7 @@ export default function App() {
                             aria-label={`Input ${index + 1}`}
                             spellCheck={false}
                             value={test.input}
+                            readOnly={Boolean(activeProblem)}
                             onChange={(e) =>
                               setDraft({
                                 ...draft,
@@ -753,6 +857,7 @@ export default function App() {
                             aria-label={`Expected output ${index + 1}`}
                             spellCheck={false}
                             value={test.expected}
+                            readOnly={Boolean(activeProblem)}
                             onChange={(e) =>
                               setDraft({
                                 ...draft,
@@ -772,6 +877,7 @@ export default function App() {
                     <label className="check-label">
                       <input
                         type="checkbox"
+                        disabled={Boolean(activeProblem)}
                         checked={draft.mode === "BENCHMARK"}
                         onChange={(e) =>
                           setDraft({
@@ -781,9 +887,13 @@ export default function App() {
                         }
                       />
                       <span>
-                        Benchmark this program
+                        {activeProblem
+                          ? "Challenge mode"
+                          : "Benchmark this program"}
                         <small>
-                          Three cold compile-and-run repetitions per case
+                          {activeProblem
+                            ? "Visible examples plus server-controlled hidden tests"
+                            : "Three cold compile-and-run repetitions per case"}
                         </small>
                       </span>
                     </label>
@@ -975,7 +1085,12 @@ export default function App() {
                         <tr key={j.id}>
                           <td className="mono">{j.id.slice(0, 8)}</td>
                           <td>{labels[j.language]}</td>
-                          <td>{pretty(j.mode)}</td>
+                          <td>
+                            {j.problem
+                              ? (problems.find((p) => p.slug === j.problem)
+                                  ?.title ?? pretty(j.problem))
+                              : pretty(j.mode)}
+                          </td>
                           <td>
                             <Badge state={j.verdict ?? j.state} />
                           </td>

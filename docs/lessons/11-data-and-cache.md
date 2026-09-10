@@ -1,6 +1,8 @@
 # 11. Schema, indexes and caching
 
-Open `V1__core.sql`. Foreign keys connect users, submissions, jobs, attempts and events. Unique keys enforce idempotency mappings and attempt generations. Check constraints encode limits such as allowed states, maximum source bytes and agreement between terminal state, verdict and completion timestamp.
+Open `V1__core.sql`, then the additive `V2__challenge_catalog.sql` migration. Foreign keys connect users, submissions, problems, jobs, attempts and events. Unique keys enforce idempotency mappings and attempt generations. Check constraints encode limits such as allowed states, maximum source bytes and agreement between terminal state, verdict and completion timestamp.
+
+The challenge catalog illustrates data projection as a security boundary. PostgreSQL holds visible and hidden cases, but `/api/problems` selects only statements, starters and visible examples. During admission the server discards browser-supplied cases for a challenge and stores the authoritative combined set. Worker assignments read that set; owner-facing job reads substitute the visible cases. Since this is open-source software running on the owner's machine, “hidden” means unavailable through the normal user API—not secret from the host administrator.
 
 Indexes follow query patterns. `(owner_id, created_at)` supports recent history for one account. A partial index on ready jobs excludes completed history from scheduling scans. Attempt indexes find expired leases and outstanding reservations. `(job_id, seq)` makes event replay an ordered range query.
 

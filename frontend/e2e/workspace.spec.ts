@@ -140,3 +140,27 @@ test("switching accounts clears private drafts and ignores old job responses", a
   await page.getByRole("button", { name: /Run history/ }).click();
   await expect(page.getByRole("button", { name: "Open →" })).toHaveCount(0);
 });
+
+test("challenge mode runs visible and server-controlled hidden tests", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByLabel("Username", { exact: true }).fill("admin");
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Open workspace" }).click();
+  await page.getByRole("button", { name: /Factorial/ }).click();
+  await expect(page.getByText(/Remember that 0!/)).toBeVisible();
+  await expect(page.getByLabel("Input 1")).toHaveValue("5\n");
+  await expect(page.getByLabel("Input 1")).toHaveAttribute("readonly", "");
+  await page
+    .getByLabel("Source code")
+    .fill(
+      "n = int(input())\nresult = 1\nfor value in range(2, n + 1):\n    result *= value\nprint(result)\n",
+    );
+  await page.getByRole("button", { name: "Run tests", exact: true }).click();
+  await page.getByRole("button", { name: "Test results", exact: true }).click();
+  await expect(
+    page.locator("tbody").getByText("accepted", { exact: true }).first(),
+  ).toBeVisible({ timeout: 90000 });
+  await expect(page.locator("tbody tr")).toHaveCount(5);
+});

@@ -5,6 +5,15 @@ export type Submission = {
   source: string;
   tests: { input: string; expected: string }[];
   mode: "RUN" | "BENCHMARK";
+  problem?: string | null;
+};
+export type Problem = {
+  slug: string;
+  title: string;
+  difficulty: "EASY" | "MEDIUM" | "HARD";
+  description: string;
+  starterCode: Record<Language, string>;
+  publicTests: { input: string; expected: string }[];
 };
 export type CaseResult = {
   case: number;
@@ -40,6 +49,7 @@ export type Summary = {
   verdict: string | null;
   language: Language;
   mode: string;
+  problem: string | null;
   created_at: string;
 };
 export type Node = {
@@ -151,5 +161,6 @@ export function initial(language: Language): Submission {
     source: x.source,
     tests: [{ input: x.input, expected: x.expected }],
     mode: "RUN",
+    problem: null,
   };
 }

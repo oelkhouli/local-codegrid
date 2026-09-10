@@ -66,6 +66,7 @@ class ControlPlaneIT {
   @Autowired JdbcTemplate db;
   @Autowired StringRedisTemplate redis;
   @Autowired Json json;
+  @Autowired ProblemService problems;
   @LocalServerPort int port;
   AuthService.User alice, bob;
 
@@ -151,6 +152,33 @@ class ControlPlaneIT {
     UUID job = submit();
     assertEquals(404, assertThrows(ApiException.class, () -> jobs.get(bob, job)).status);
     assertTrue(jobs.list(bob).isEmpty());
+  }
+
+  @Test
+  void challengeCatalogKeepsHiddenTestsOnTheWorkerSide() {
+    var catalog = problems.list();
+    assertEquals(5, catalog.size());
+    var fizzBuzz =
+        catalog.stream().filter(p -> p.slug().equals("fizz-buzz")).findFirst().orElseThrow();
+    assertEquals(1, fizzBuzz.publicTests().size());
+    assertTrue(fizzBuzz.starterCode().containsKey("JAVA"));
+
+    var forged = List.of(new JobService.CaseSpec("1\n", "forged\n"));
+    var request =
+        new JobService.Submission(
+            Language.PYTHON, "print('candidate')\n", forged, "RUN", "fizz-buzz");
+    UUID job = (UUID) jobs.submit(alice, UUID.randomUUID().toString(), request).get("id");
+
+    var publicSubmission = (Map<?, ?>) jobs.get(alice, job).get("submission");
+    assertEquals("fizz-buzz", publicSubmission.get("problem"));
+    assertEquals(1, ((List<?>) publicSubmission.get("tests")).size());
+    assertFalse(json.write(publicSubmission).contains("FizzBuzz\\n16"));
+
+    worker("local");
+    assertTrue(coordinator.dispatch());
+    var assignment = workers.assignment("local", assigned(job));
+    assertEquals(4, ((List<?>) assignment.get("tests")).size());
+    assertFalse(json.write(assignment.get("tests")).contains("forged"));
   }
 
   @Test

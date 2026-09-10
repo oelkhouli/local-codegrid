@@ -63,14 +63,21 @@ Verdicts describe the result: `ACCEPTED`, `WRONG_ANSWER`, `COMPILE_ERROR`, `RUNT
 
 The database transaction prevents double reservation by API replicas. The node file lock prevents separate JVMs from starting more sandboxes than the same hardware budget permits. Both are needed because a database lease cannot physically kill a process. Retrying can execute code twice; fencing limits accepted writes to the current attempt. Never call this exactly-once execution.
 
+## Challenge catalog
+
+`problems` stores the statement, difficulty, four language starters, visible examples, and additional tests. `GET /api/problems` projects only the public fields. A challenge submission carries a slug and candidate source; `JobService` resolves the authoritative test set in the admission transaction and ignores tests supplied by the browser. The worker receives every case, while job reads replace the stored set with `public_tests`. Modifying a request in browser developer tools therefore cannot turn a challenge into an easy self-authored assertion.
+
+The cases are hidden from ordinary application users, not cryptographically secret from the owner of an open-source self-hosted installation. A machine administrator can inspect the migration or database. This demonstrates an API trust boundary rather than DRM.
+
 ## Schema
 
-The executable schema is [V1__core.sql](../backend/api/src/main/resources/db/migration/V1__core.sql), applied by Flyway. Use new migrations after this release; never modify an applied version.
+The executable schema is applied by Flyway: [V1__core.sql](../backend/api/src/main/resources/db/migration/V1__core.sql) establishes execution state and [V2__challenge_catalog.sql](../backend/api/src/main/resources/db/migration/V2__challenge_catalog.sql) adds the problem catalog. Use new migrations after this release; never modify an applied version.
 
 ```mermaid
 erDiagram
     users ||--o{ sessions : authenticates
     users ||--o{ submissions : owns
+    problems ||--o{ submissions : selects
     submissions ||--o{ jobs : runs
     users ||--o{ idempotency : scopes
     jobs ||--o{ events : emits
@@ -85,7 +92,8 @@ erDiagram
 |---|---|---|
 | users | UUID; unique username | BCrypt hash and USER/ADMIN role |
 | sessions | SHA-256 token; expiry index | Shared, expiring sessions and CSRF token |
-| submissions | UUID; owner FK | Immutable language/source/tests/mode |
+| problems | slug | Public statement/starters and server-controlled test definitions |
+| submissions | UUID; owner FK; partial problem/time index | Immutable language/source/tests/mode and optional challenge |
 | jobs | UUID; `(owner_id, created_at DESC)`; partial ready-job index | Current state, generation, deadline and event cursor |
 | idempotency | `(owner_id, key)` | Request hash to original job mapping |
 | nodes | node ID; bound ledger UUID | Engine budget, token hash, heartbeat and quarantine |

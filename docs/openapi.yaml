@@ -202,6 +202,23 @@ paths:
         required: true
         schema: *id009
         description: Value returned by login or GET /api/session.
+  /api/problems:
+    get:
+      operationId: get_api_problems
+      tags:
+      - Public
+      summary: List enabled coding challenges
+      description: Returns statements, language starter code, and visible examples. Server-controlled hidden tests are never included.
+      responses:
+        '200':
+          description: Enabled challenge catalog
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Problem'
+        '401': *id002
   /api/jobs:
     post:
       operationId: post_api_jobs
@@ -1011,6 +1028,7 @@ components:
           type: array
           minItems: 1
           maxItems: 3
+          description: Required for a free-form run. Ignored when problem is present; the server resolves the catalog tests.
           items:
             $ref: '#/components/schemas/CaseSpec'
         mode:
@@ -1019,11 +1037,39 @@ components:
           - RUN
           - BENCHMARK
           description: BENCHMARK repeats each case three times in fresh containers.
+        problem:
+          type:
+          - string
+          - 'null'
+          pattern: ^[a-z0-9-]{1,64}$
+          description: Optional challenge slug. When present, mode must be RUN and the server ignores submitted tests, replacing them with the catalog's visible and hidden tests.
       required:
       - language
       - source
-      - tests
       - mode
+    Problem:
+      type: object
+      properties:
+        slug:
+          type: string
+          pattern: ^[a-z0-9-]{1,64}$
+        title:
+          type: string
+        difficulty:
+          type: string
+          enum: [EASY, MEDIUM, HARD]
+        description:
+          type: string
+        starterCode:
+          type: object
+          additionalProperties:
+            type: string
+          description: Starter source keyed by JAVA, PYTHON, CPP, and JAVASCRIPT.
+        publicTests:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseSpec'
+      required: [slug, title, difficulty, description, starterCode, publicTests]
     JobAccepted:
       type: object
       properties:

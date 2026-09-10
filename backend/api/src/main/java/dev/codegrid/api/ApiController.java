@@ -17,18 +17,21 @@ public class ApiController {
   private final WorkerService workers;
   private final JdbcTemplate db;
   private final boolean secure;
+  private final ProblemService problems;
 
   public ApiController(
       AuthService auth,
       JobService jobs,
       Events events,
       WorkerService workers,
+      ProblemService problems,
       JdbcTemplate db,
       @Value("${codegrid.secure-cookie}") boolean secure) {
     this.auth = auth;
     this.jobs = jobs;
     this.events = events;
     this.workers = workers;
+    this.problems = problems;
     this.db = db;
     this.secure = secure;
   }
@@ -93,6 +96,11 @@ public class ApiController {
       @RequestHeader(value = "Idempotency-Key", required = false) String key,
       @RequestBody JobService.Submission request) {
     return ResponseEntity.accepted().body(jobs.submit(user(a), key, request));
+  }
+
+  @GetMapping("/api/problems")
+  Object problems() {
+    return problems.list();
   }
 
   @GetMapping("/api/jobs")

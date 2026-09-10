@@ -15,7 +15,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class JobService {
   public record CaseSpec(String input, String expected) {}
 
-  public record Submission(Language language, String source, List<CaseSpec> tests, String mode) {}
+  public record Submission(
+      Language language, String source, List<CaseSpec> tests, String mode, String problem) {
+    public Submission(Language language, String source, List<CaseSpec> tests, String mode) {
+      this(language, source, tests, mode, null);
+    }
+  }
 
   private final JdbcTemplate db;
   private final Json json;
@@ -24,6 +29,7 @@ public class JobService {
   private final RateLimit rate;
   private final StringRedisTemplate redis;
   private final MeterRegistry metrics;
+  private final ProblemService problems;
 
   public JobService(
       JdbcTemplate db,
@@ -32,7 +38,8 @@ public class JobService {
       AuthService auth,
       RateLimit rate,
       StringRedisTemplate redis,
-      MeterRegistry metrics) {
+      MeterRegistry metrics,
+      ProblemService problems) {
     this.db = db;
     this.json = json;
     this.events = events;
@@ -40,6 +47,7 @@ public class JobService {
     this.rate = rate;
     this.redis = redis;
     this.metrics = metrics;
+    this.problems = problems;
   }
 
   public static Instant instant(Object value) {
@@ -65,14 +73,33 @@ public class JobService {
         || !Set.of("RUN", "BENCHMARK").contains(request.mode()))
       throw new ApiException(400, "Invalid language or mode");
     size(request.source(), 32768);
-    if (request.tests() == null || request.tests().isEmpty() || request.tests().size() > 3)
-      throw new ApiException(400, "Provide one to three test cases");
-    for (var t : request.tests()) {
+    ProblemService.Selection challenge = null;
+    List<CaseSpec> executionTests = request.tests();
+    if (request.problem() != null) {
+      if (!request.mode().equals("RUN"))
+        throw new ApiException(400, "Challenge submissions use RUN mode");
+      challenge = problems.select(request.problem(), request.language());
+      executionTests = challenge.tests();
+    }
+    if (executionTests == null
+        || executionTests.isEmpty()
+        || executionTests.size() > (challenge == null ? 3 : 12))
+      throw new ApiException(
+          400, challenge == null ? "Provide one to three test cases" : "Invalid challenge tests");
+    for (var t : executionTests) {
       if (t == null) throw new ApiException(400, "Invalid case");
       size(t.input(), 4096);
       size(t.expected(), 8192);
     }
-    String hash = AuthService.hash(json.write(request));
+    Object hashInput =
+        challenge == null
+            ? request
+            : Map.of(
+                "language", request.language(),
+                "source", request.source(),
+                "mode", request.mode(),
+                "problem", request.problem());
+    String hash = AuthService.hash(json.write(hashInput));
     // A per-user row lock serializes idempotency and active-job quota decisions across API
     // replicas.
     db.queryForMap("SELECT id FROM users WHERE id=? FOR UPDATE", user.id());
@@ -96,14 +123,15 @@ public class JobService {
           507, "Local history capacity reached; export and reset through the operator tools");
     UUID submission = UUID.randomUUID(), job = UUID.randomUUID();
     db.update(
-        "INSERT INTO submissions(id,owner_id,language,source,tests,mode)"
-            + " VALUES(?,?,?,?,?::jsonb,?)",
+        "INSERT INTO submissions(id,owner_id,language,source,tests,mode,problem_slug)"
+            + " VALUES(?,?,?,?,?::jsonb,?,?)",
         submission,
         user.id(),
         request.language().name(),
         request.source(),
-        json.write(request.tests()),
-        request.mode());
+        json.write(executionTests),
+        request.mode(),
+        request.problem());
     db.update(
         "INSERT INTO jobs(id,submission_id,owner_id,state,deadline)"
             + " VALUES(?,?,?,'QUEUED',clock_timestamp()+interval '5 minutes')",
@@ -133,8 +161,8 @@ public class JobService {
 
   public List<Map<String, Object>> list(AuthService.User user) {
     return db.queryForList(
-        "SELECT j.*,s.language,s.mode FROM jobs j JOIN submissions s ON s.id=j.submission_id WHERE"
-            + " j.owner_id=? ORDER BY j.created_at DESC LIMIT 100",
+        "SELECT j.*,s.language,s.mode,s.problem_slug AS problem FROM jobs j JOIN submissions s ON"
+            + " s.id=j.submission_id WHERE j.owner_id=? ORDER BY j.created_at DESC LIMIT 100",
         user.id());
   }
 
@@ -163,8 +191,19 @@ public class JobService {
       if (value != null) return json.read(value);
     } catch (Exception ignored) {
     }
-    var row = db.queryForMap("SELECT language,source,tests,mode FROM submissions WHERE id=?", id);
-    row.put("tests", json.read(row.get("tests").toString()));
+    var row =
+        db.queryForMap(
+            "SELECT language,source,tests,mode,problem_slug AS problem FROM submissions WHERE id=?",
+            id);
+    if (row.get("problem") == null) row.put("tests", json.read(row.get("tests").toString()));
+    else
+      row.put(
+          "tests",
+          json.read(
+              db.queryForObject(
+                  "SELECT public_tests::text FROM problems WHERE slug=?",
+                  String.class,
+                  row.get("problem"))));
     try {
       redis.opsForValue().set(key, json.write(row), Duration.ofMinutes(5));
     } catch (Exception ignored) {

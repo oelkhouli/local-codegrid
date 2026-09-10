@@ -32,6 +32,7 @@ The launcher generates private local secrets, builds all four compiler images, s
 - One disposable sandbox per test and repetition: fixed image and commands, unprivileged UID, dropped capabilities, seccomp, no network or host mounts, read-only root, bounded CPU/memory/processes/tmpfs/files/output, and layered wall timeouts.
 - Cookie sessions, BCrypt passwords, CSRF and WebSocket origin checks, ownership checks, rate limits, audit events, and node credentials.
 - Ordered, durable WebSocket log replay; run history, result details, cold-run benchmarking, worker budgets, and 15 lessons in the interface.
+- A PostgreSQL-backed challenge catalog with starter code for all four languages, visible examples, and server-controlled hidden tests. The starter set includes FizzBuzz, palindrome, factorial, maximum value, and pair sum; free-form execution remains available.
 - Prometheus and provisioned Grafana panels; unit, PostgreSQL/Redis integration, browser, sandbox, fault-injection, and load-test suites.
 
 **This is a bounded local portfolio lab, not a public hostile multi-tenant service.** Containers share a kernel; the worker and cleanup services hold a powerful engine socket. Read [SECURITY.md](SECURITY.md) before running other people's code. No isolation claim substitutes for keeping the host kernel and images patched.
