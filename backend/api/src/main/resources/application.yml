@@ -1,0 +1,49 @@
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://postgres:5432/codegrid}
+    username: ${DATABASE_USER:codegrid}
+    password: ${DATABASE_PASSWORD}
+    hikari:
+      maximum-pool-size: 12
+      connection-timeout: 3000
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      password: ${REDIS_PASSWORD}
+      timeout: 1s
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+server:
+  port: 8080
+  max-http-request-header-size: 16KB
+  tomcat:
+    threads:
+      max: 64
+management:
+  server:
+    port: ${MANAGEMENT_PORT:9001}
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        codegrid.job.latency: true
+        codegrid.job.queue: true
+        codegrid.attempt.duration: true
+codegrid:
+  origin: ${PUBLIC_ORIGIN:http://127.0.0.1:8080}
+  admin-password: ${ADMIN_PASSWORD}
+  node-token: ${NODE_TOKEN}
+  node-id: ${NODE_ID:local}
+  node-cpu: ${NODE_CPU:2000}
+  node-memory: ${NODE_MEMORY:1073741824}
+  node-slots: ${NODE_SLOTS:2}
+  secure-cookie: ${SECURE_COOKIE:false}
+  scheduler-enabled: ${SCHEDULER_ENABLED:true}
