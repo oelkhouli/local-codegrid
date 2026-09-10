@@ -1,26 +1,45 @@
 # Verification record
 
-This file separates implemented checks from executed evidence. Do not infer a passing runtime from the presence of a test or workflow.
+This file separates executed evidence from implemented or planned checks.
 
-## Executed in the implementation workspace
+## Latest complete run
 
-- Maven packaged all three Java modules and their executable API/worker jars. **37 unit tests passed**: 28 domain cases and 9 worker cases, including a race between two separate JVMs for one shared ledger slot.
-- The available workspace JDK is **17**, so this local Maven run explicitly used `-Dmaven.compiler.release=17`. The project and container/CI targets are Java **21**. A Java 21 integration run is a separate gate.
-- `npm ci` and `npm run build` completed with strict TypeScript checking and a production Vite build.
-- All 12 public base-image manifest digests were resolved from their registries and recorded in `infra/images.lock.json`.
+[GitHub Actions run 34495953638](https://github.com/oelkhouli/local-codegrid/actions/runs/34495953638) passed on commit `d1c806d` using Java 21, Docker, PostgreSQL, Redis, and Chromium.
 
-## First real-host CI run
+| Gate | Result |
+|---|---|
+| Java domain tests | 29 passed; zero failures or skips |
+| Java worker tests | 9 passed; zero failures or skips |
+| Real PostgreSQL/Redis integration | 12 passed; zero failures or skips |
+| TypeScript production build | Passed |
+| Compose build/start and host reachability | Passed |
+| Languages, sandbox, crash, duplicate delivery | 17 checks passed |
+| Playwright | 4 flows passed |
+| Load smoke | 32/32 completed; zero execution failures |
 
-[Run 34352834414](https://github.com/oelkhouli/local-codegrid/actions/runs/34352834414) at commit `608b62d` passed Java 21 unit/integration tests and the production frontend build. All services started and the workers passed their in-container enforcement probes. The first system request then failed because the web container, attached only to an internal bridge, had no reachable published loopback port. The deployment now gives only web/Grafana a separate ingress bridge and checks host reachability during startup. The database/control networks and submitted-code network restrictions remain enforced. [Run 34353519206](https://github.com/oelkhouli/local-codegrid/actions/runs/34353519206) then passed host reachability, all four language examples, and all 11 isolation/error fixtures. The interrupted job stalled during the real worker-kill test. The next run added sanitized coordinator diagnostics and identified `RandomGenerator.getDefault()` failing in the slim JRE because its selected implementation was unavailable. A minimal-runtime regression test reproduced the same exception using `--limit-modules java.base`; retry jitter now uses `ThreadLocalRandom`, which is part of java.base. The crash/browser/load gates need a rerun.
+The challenge integration case attempts to replace FizzBuzz's cases with a forged expected value. The owner-facing response contains one public example, the worker assignment contains all four catalog cases, and the forged case is absent. The browser flow solves Factorial and receives five accepted case results: one visible plus four server-controlled cases. The run also proves that Flyway applies `V2__challenge_catalog.sql` to a new deployment.
 
-## Further deployment gates
+The system suite executes Java, Python, C++, and JavaScript and checks network denial, a read-only root, absence of host secrets, workspace quota, process and memory limits, output limits, wall timeout, compiler/runtime errors, wrong answers, worker SIGKILL recovery, and duplicate notification delivery.
 
-- `ControlPlaneIT`: 11 integration scenarios using actual PostgreSQL and Redis, including parallel idempotency, scheduler budget races, stale leases, completion/cancel races, ordered duplicate log delivery, and HTTP authentication/CSRF checks.
-- `scripts/system_test.py --faults`: four languages, bounded adversarial isolation cases, worker SIGKILL recovery and duplicate notification delivery.
-- Playwright: desktop execution/history/log replay/lessons and mobile layout with inert HTML-shaped program output.
-- Open-loop benchmark client: admission and execution outcomes, dispatch lag, throughput and p50/p95; p99 is withheld when fewer than 1,000 terminal observations exist.
-- Compose one-command launch, Java 21 packaged images, Podman compatibility, multi-computer SSH profile, and backup/restore.
+## Earlier failures that improved the design
 
-The implementation workspace has no Docker/Podman daemon, so these deployment checks have not been executed here. The public CI workflow runs the Docker/Java 21/integration/browser/fault gates on a real Ubuntu runner. Record its actual conclusion and run URL here after it completes; do not label this release fully runtime-verified before that evidence exists. A local Chromium download also failed at the browser CDN, so no screenshot was fabricated.
+The first real-host run found that services attached only to Docker internal bridges had unreachable published loopback ports. A separate ingress bridge now attaches only to web and Grafana; startup verifies both from the host. Submitted-code containers still run with no network.
 
-No latency, throughput, p99, scaling gain, security guarantee, or multi-host result is claimed without a corresponding run. The [benchmark targets](benchmarks.md) and [roadmap criteria](roadmap.md) remain experiments to execute on the intended hardware.
+A later worker-kill run found retry transactions rolling back because `RandomGenerator.getDefault()` selected an implementation absent from the slim JRE. A separate minimal-runtime regression reproduces that environment with `--limit-modules java.base`; retry jitter now uses `ThreadLocalRandom`, which is available in java.base. The latest complete run passed worker-crash recovery.
+
+The account-switch browser test holds an authenticated private job response across logout and another account's login. Session epochs prevent that response or the first account's unsaved draft from appearing in the new workspace.
+
+These failures show why unit tests and healthy container status alone do not establish end-to-end correctness.
+
+## Local build evidence
+
+The implementation workspace packaged the API, domain, and worker modules and ran 38 unit tests using its available JDK 17 with `-Dmaven.compiler.release=17`. The project and passing CI target Java 21. Strict TypeScript and the production Vite build passed locally. The workspace has no Docker/Podman daemon, so real runtime evidence comes from the linked CI run and the user's successful Windows launch.
+
+## Remaining host-specific experiments
+
+- Windows launch succeeded on the user's machine; the full automated suite has not been repeated there.
+- Podman/rootless Podman and the second-computer SSH worker profile remain unverified on those hosts.
+- Backup restoration into an empty database with the recovered ledger remains to be demonstrated.
+- At least 1,000 completed samples are required before reporting p99. Repeated load/slot comparisons and 20 crash trials remain larger experiments.
+
+The passing Docker deployment does not prove protection against every kernel or container-engine exploit. This is a bounded local portfolio lab; see [SECURITY.md](../SECURITY.md) for its trust boundaries and [benchmarks](benchmarks.md) for measurement rules.
