@@ -12,6 +12,33 @@ import java.util.function.BiConsumer;
 public class RuntimeEngine {
   final String engine, node;
 
+  static final class RuntimeFailure extends IOException {
+    final String operation, reason;
+    final int exitCode;
+
+    RuntimeFailure(String operation, String reason, int exitCode) {
+      super("Container engine operation failed");
+      this.operation = Set.of("info", "image", "create", "ps", "inspect", "rm", "stats")
+          .contains(operation) ? operation : "unknown";
+      this.reason = reason;
+      this.exitCode = exitCode;
+    }
+  }
+
+  // Classify engine output locally; never emit raw output, which may contain private metadata.
+  static String failureReason(String output) {
+    String value = output.toLowerCase(Locale.ROOT);
+    if (value.contains("no such image")) return "image_missing";
+    if (value.contains("permission denied") || value.contains("operation not permitted"))
+      return "permission_denied";
+    if (value.contains("no space left on device")) return "disk_full";
+    if (value.contains("already in use")) return "name_conflict";
+    if (value.contains("cannot connect") || value.contains("connection refused"))
+      return "engine_unreachable";
+    if (value.contains("client version") && value.contains("too old")) return "engine_api_version";
+    return "engine_command_failed";
+  }
+
   public RuntimeEngine(String engine, String node) {
     if (!Set.of("docker", "podman").contains(engine))
       throw new IllegalArgumentException("Unsupported engine");
@@ -54,11 +81,13 @@ public class RuntimeEngine {
     reader.start();
     if (!p.waitFor(seconds, TimeUnit.SECONDS)) {
       p.destroyForcibly();
-      throw new IOException("Runtime command timed out");
+      throw new RuntimeFailure(command.get(1), "command_timeout", -1);
     }
     reader.join(1000);
     if (overflow.get() || p.exitValue() != 0)
-      throw new IOException("Runtime command failed: " + command.get(1));
+      throw new RuntimeFailure(command.get(1),
+          overflow.get() ? "engine_output_limit" : failureReason(output.toString(StandardCharsets.UTF_8)),
+          p.exitValue());
     return output.toString(StandardCharsets.UTF_8).trim();
   }
 

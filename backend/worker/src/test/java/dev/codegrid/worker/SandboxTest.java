@@ -11,6 +11,23 @@ import org.junit.jupiter.api.io.TempDir;
 class SandboxTest {
   @TempDir Path directory;
 
+  @Test
+  void engineFailureDiagnosticsIdentifyCauseWithoutExposingOutput() throws Exception {
+    var runtime = new RuntimeEngine("docker", "local");
+    var failure = assertThrows(RuntimeEngine.RuntimeFailure.class,
+        () -> runtime.command(List.of("sh", "-c",
+            "printf 'Error: No such image: PRIVATE_IMAGE_MARKER' >&2; exit 125"), 3));
+    var diagnostic = WorkerMain.diagnostic("attempt_interrupted", failure);
+    assertEquals("image_missing", diagnostic.get("reason"));
+    assertEquals(125, diagnostic.get("exit_code"));
+    assertFalse(ControlClient.JSON.writeValueAsString(diagnostic).contains("PRIVATE_IMAGE_MARKER"));
+    assertTrue(diagnostic.get("error_frames").toString().contains("RuntimeEngine.command"));
+    var wrapped = new java.io.IOException("PRIVATE_TOKEN", new java.net.ConnectException("PRIVATE_URL"));
+    var network = WorkerMain.diagnostic("attempt_interrupted", wrapped);
+    assertEquals("ConnectException", network.get("cause_type"));
+    assertFalse(ControlClient.JSON.writeValueAsString(network).contains("PRIVATE_"));
+  }
+
   private RuntimeEngine.Outcome result(byte[] output) {
     return new RuntimeEngine.Outcome(0, false, false, false, output, new byte[0], null, 10);
   }

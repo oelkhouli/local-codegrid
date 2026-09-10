@@ -416,8 +416,27 @@ public class WorkerMain {
             Math.max(0, ManagementFactory.getOperatingSystemMXBean().getSystemLoadAverage())));
   }
 
+  static Map<String, Object> diagnostic(String event, Exception e) {
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("event", event);
+    result.put("error_type", e.getClass().getSimpleName());
+    result.put("error_frames", Arrays.stream(e.getStackTrace())
+        .filter(f -> f.getClassName().startsWith("dev.codegrid."))
+        .limit(5).map(Object::toString).toList());
+    Throwable cause = e;
+    for (int i = 0; i < 4 && cause.getCause() != null && cause.getCause() != cause; i++)
+      cause = cause.getCause();
+    result.put("cause_type", cause.getClass().getSimpleName());
+    if (e instanceof RuntimeEngine.RuntimeFailure failure) {
+      result.put("operation", failure.operation);
+      result.put("reason", failure.reason);
+      result.put("exit_code", failure.exitCode);
+    }
+    if (e instanceof ControlClient.Rejected rejected) result.put("http_status", rejected.status);
+    return result;
+  }
+
   private static void log(String event, Exception e) {
-    System.err.println(
-        "{\"event\":\"" + event + "\",\"error_type\":\"" + e.getClass().getSimpleName() + "\"}");
+    System.err.println(ControlClient.JSON.valueToTree(diagnostic(event, e)));
   }
 }
