@@ -1,0 +1,1313 @@
+openapi: 3.1.0
+info:
+  title: Local CodeGrid
+  version: 0.1.0
+  description: Local-only code execution API. Runtime has no paid or hosted service
+    dependency. Public request bodies <=64 KiB; trusted internal bodies <=128 KiB.
+    JSON errors have an error field. Cookies are not bearer tokens. The web proxy
+    blocks /internal and /actuator.
+servers:
+- url: http://127.0.0.1:8080
+  description: Local public web proxy
+security:
+- SessionCookie: []
+tags:
+- name: Public
+- name: Admin
+- name: WebSocket
+- name: Internal
+paths:
+  /api/health:
+    get:
+      operationId: get_api_health
+      tags:
+      - Public
+      summary: Database readiness
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: &id009
+                    type: string
+        '400': &id001
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401': &id002
+          description: Missing or expired credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403': &id003
+          description: CSRF, Origin or role rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404': &id004
+          description: Unknown or foreign object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409': &id005
+          description: Conflicting idempotency content or stale attempt authority
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413': &id006
+          description: Body or output budget exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429': &id007
+          description: Token bucket or active-job quota exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503': &id008
+          description: Required rate-limit or database service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security: []
+  /api/auth/register:
+    post:
+      operationId: post_api_auth_register
+      tags:
+      - Public
+      summary: Create an ordinary user
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created: &id010
+                    type: boolean
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: 4-registration burst; refills one token per minute per peer. Global
+        maximum 100 users.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+  /api/auth/login:
+    post:
+      operationId: post_api_auth_login
+      tags:
+      - Public
+      summary: Start an 8-hour cookie session
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+          headers:
+            Set-Cookie:
+              schema: *id009
+              description: Opaque session cookie; retain for subsequent HTTP and WebSocket
+                requests.
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: 'Sets codegrid_session: HttpOnly, SameSite=Strict, Path=/. Ten-attempt
+        burst, one token each 6 seconds. Secure cookie is enabled when deployed behind
+        configured TLS.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+  /api/session:
+    get:
+      operationId: get_api_session
+      tags:
+      - Public
+      summary: Get current identity and CSRF token
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+  /api/logout:
+    post:
+      operationId: post_api_logout
+      tags:
+      - Public
+      summary: Invalidate current session and clear cookie
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logged_out: *id010
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      parameters:
+      - &id011
+        name: X-CSRF-Token
+        in: header
+        required: true
+        schema: *id009
+        description: Value returned by login or GET /api/session.
+  /api/problems:
+    get:
+      operationId: get_api_problems
+      tags:
+      - Public
+      summary: List enabled coding challenges
+      description: Returns statements, language starter code, and visible examples. Server-controlled hidden tests are never included.
+      responses:
+        '200':
+          description: Enabled challenge catalog
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Problem'
+        '401': *id002
+  /api/jobs:
+    post:
+      operationId: post_api_jobs
+      tags:
+      - Public
+      summary: Submit or replay an identical idempotent request
+      responses:
+        '202':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobAccepted'
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+        '507':
+          description: Local history capacity reached
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      description: One transaction creates the submission/job/key/event. Keys are
+        scoped to the user and retained with history. 4 active jobs per user; 12-token
+        submission burst with 2 tokens/second refill. 10,000-job global cap returns
+        507. Whole public JSON body is at most 64 KiB.
+      parameters:
+      - *id011
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{8,100}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Submission'
+    get:
+      operationId: get_api_jobs
+      tags:
+      - Public
+      summary: Newest 100 jobs owned by current user
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JobSummary'
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+  /api/jobs/{id}:
+    get:
+      operationId: get_api_jobs_id
+      tags:
+      - Public
+      summary: Get owned job, source, attempts and results
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      parameters:
+      - &id013
+        name: id
+        in: path
+        required: true
+        schema: &id012
+          type: string
+          format: uuid
+  /api/jobs/{id}/cancel:
+    post:
+      operationId: post_api_jobs_id_cancel
+      tags:
+      - Public
+      summary: Cancel a nonterminal job; repeat calls are harmless
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: *id012
+                  state:
+                    $ref: '#/components/schemas/JobState'
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: First committed terminal decision wins. Cancellation is logical;
+        physical cleanup may complete later.
+      parameters:
+      - *id013
+      - *id011
+  /api/jobs/{id}/events:
+    get:
+      operationId: get_api_jobs_id_events
+      tags:
+      - Public
+      summary: Replay at most 128 ordered durable events
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Event'
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: Persist the highest sequence received, deduplicate by sequence,
+        and request subsequent batches until empty.
+      parameters:
+      - *id013
+      - name: after
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+  /api/overview:
+    get:
+      operationId: get_api_overview
+      tags:
+      - Public
+      summary: Current user statistics for last 24 hours
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Overview'
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: Database percentile_cont over all terminal jobs, including failures/cancellations.
+        Values can be null for no completed observations; these UI statistics are
+        not a statistically sufficient benchmark report.
+  /api/nodes:
+    get:
+      operationId: get_api_nodes
+      tags:
+      - Public
+      summary: List node resource budgets and worker freshness
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Node'
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+  /api/admin/audit:
+    get:
+      operationId: get_api_admin_audit
+      tags:
+      - Admin
+      summary: 'Admin: newest 100 audit records'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: &id014
+                      type: integer
+                    actor: *id009
+                    action: *id009
+                    target: *id009
+                    created_at: &id019
+                      type: string
+                      format: date-time
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+  /api/admin/nodes:
+    post:
+      operationId: post_api_admin_nodes
+      tags:
+      - Admin
+      summary: 'Admin: register an existing local execution engine'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: *id009
+                  token: *id009
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: Returns a random node token once. Store it securely. A node is
+        quarantined until its reaper heartbeat and worker enforcement probes establish
+        readiness. Duplicate ID returns 409.
+      parameters:
+      - *id011
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeSpec'
+  /ws/jobs/{id}:
+    get:
+      operationId: get_ws_jobs_id
+      tags:
+      - WebSocket
+      summary: Upgrade to durable job event WebSocket
+      responses:
+        '101':
+          description: WebSocket upgrade. Subsequent server text frames contain Event
+            objects; this is not an HTTP JSON body.
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: Real WebSocket upgrade, authenticated with the same cookie and
+        an exact configured Origin header. Server sends one JSON Event per text frame.
+        Replay uses the same sequence as REST. No client commands are accepted. Reconnect
+        with the last sequence. Max 3 connections/user, 64 total; bounded buffers;
+        session expiration closes the connection.
+      parameters:
+      - *id013
+      - name: after
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+  /internal/config:
+    get:
+      operationId: get_internal_config
+      tags:
+      - Internal
+      summary: Get authenticated node budget
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cpu_budget: *id014
+                  memory_budget: *id014
+                  slots: *id014
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: 'Trusted worker/reaper only; not forwarded by the public web proxy. '
+      security: &id015
+      - NodeToken: []
+        NodeId: []
+  /internal/bind-ledger:
+    post:
+      operationId: post_internal_bind_ledger
+      tags:
+      - Internal
+      summary: Bind node to persistent shared ledger identity
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bound: *id010
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: Trusted worker/reaper only; not forwarded by the public web proxy.
+        First binding is atomic. Repeating the same UUID succeeds; a different ledger
+        for this node returns 409.
+      security: *id015
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ledger: *id012
+              required:
+              - ledger
+  /internal/register:
+    post:
+      operationId: post_internal_register
+      tags:
+      - Internal
+      summary: Register a worker process after enforcement probes
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  registered: *id010
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: 'Trusted worker/reaper only; not forwarded by the public web proxy. '
+      security: &id016
+      - NodeToken: []
+        NodeId: []
+        NodeLedger: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Registration'
+  /internal/heartbeat:
+    post:
+      operationId: post_internal_heartbeat
+      tags:
+      - Internal
+      summary: Refresh worker liveness
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: *id010
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: 'Trusted worker/reaper only; not forwarded by the public web proxy. '
+      security: *id016
+      parameters:
+      - &id017
+        name: worker
+        in: query
+        required: true
+        schema: *id012
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: &id018
+              type: object
+              additionalProperties: true
+  /internal/assignment:
+    get:
+      operationId: get_internal_assignment
+      tags:
+      - Internal
+      summary: Poll authoritative leased assignment or empty object
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/Assignment'
+                - type: object
+                  maxProperties: 0
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: Trusted worker/reaper only; not forwarded by the public web proxy.
+        Redis notification is only a hint. Polling does not create a new generation.
+      security: *id016
+      parameters:
+      - *id017
+  /internal/node-heartbeat:
+    post:
+      operationId: post_internal_node_heartbeat
+      tags:
+      - Internal
+      summary: Reaper heartbeat with host load and cleanup quarantine
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: *id018
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: 'Trusted worker/reaper only; not forwarded by the public web proxy. '
+      security: *id016
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                load:
+                  type: number
+                  minimum: 0
+                  maximum: 10000
+              required:
+              - load
+  /internal/cleanup:
+    get:
+      operationId: get_internal_cleanup
+      tags:
+      - Internal
+      summary: Get up to 64 expired or inactive attempts to reconcile
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    job_id: *id012
+                    generation: *id014
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: 'Trusted worker/reaper only; not forwarded by the public web proxy. '
+      security: *id016
+  /internal/jobs/{job}/{generation}/renew:
+    post:
+      operationId: post_internal_jobs_job_generation_renew
+      tags:
+      - Internal
+      summary: Start or renew current fenced execution authority
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lease_until: *id019
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: Trusted worker/reaper only; not forwarded by the public web proxy.
+        Renewal is capped at the hard attempt deadline. Expiry/generation/worker mismatch
+        cannot revive a lease.
+      security: *id016
+      parameters:
+      - &id020
+        name: job
+        in: path
+        required: true
+        schema: *id012
+      - &id021
+        name: generation
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 3
+      - *id017
+      - name: start
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: *id018
+  /internal/jobs/{job}/{generation}/logs:
+    post:
+      operationId: post_internal_jobs_job_generation_logs
+      tags:
+      - Internal
+      summary: Persist next log sequence or acknowledge identical replay
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ack: *id014
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: Trusted worker/reaper only; not forwarded by the public web proxy.
+        Out-of-order or changed duplicate sequence returns 409. Combined persisted
+        log text across job attempts is bounded at 128 KiB.
+      security: *id016
+      parameters:
+      - *id020
+      - *id021
+      - *id017
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogChunk'
+  /internal/jobs/{job}/{generation}/complete:
+    post:
+      operationId: post_internal_jobs_job_generation_complete
+      tags:
+      - Internal
+      summary: Commit terminal outcome or bounded infrastructure retry
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted: *id010
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: Trusted worker/reaper only; not forwarded by the public web proxy.
+        Result JSON at most 96 KiB. Repeating the exact accepted result is acknowledged
+        without writes, even after lease expiry. A different report requires current
+        authority and RUNNING state. CANCELLED is not a worker-report verdict.
+      security: *id016
+      parameters:
+      - *id020
+      - *id021
+      - *id017
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Result'
+  /internal/jobs/{job}/{generation}/cleaned:
+    post:
+      operationId: post_internal_jobs_job_generation_cleaned
+      tags:
+      - Internal
+      summary: Acknowledge physical cleanup and release reservation
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cleaned: *id010
+        '400': *id001
+        '401': *id002
+        '403': *id003
+        '404': *id004
+        '409': *id005
+        '413': *id006
+        '429': *id007
+        '503': *id008
+      description: Trusted worker/reaper only; not forwarded by the public web proxy.
+        Call only after fencing the shared ledger, removing all attempt containers
+        and confirming absence. Active authority returns 409. Requires the bound ledger
+        header.
+      security: *id016
+      parameters:
+      - *id020
+      - *id021
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: *id018
+components:
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: codegrid_session
+    NodeToken:
+      type: http
+      scheme: bearer
+      description: Random per-node token; no JWT parsing.
+    NodeId:
+      type: apiKey
+      in: header
+      name: X-CodeGrid-Node
+    NodeLedger:
+      type: apiKey
+      in: header
+      name: X-CodeGrid-Ledger
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: *id009
+      required:
+      - error
+    Language:
+      type: string
+      enum:
+      - JAVA
+      - PYTHON
+      - CPP
+      - JAVASCRIPT
+    JobState:
+      type: string
+      enum:
+      - QUEUED
+      - LEASED
+      - RUNNING
+      - RETRY_WAIT
+      - FINISHED
+      - CANCELLED
+    Verdict:
+      type: string
+      enum:
+      - ACCEPTED
+      - WRONG_ANSWER
+      - COMPILE_ERROR
+      - RUNTIME_ERROR
+      - MEMORY_LIMIT
+      - TIME_LIMIT
+      - OUTPUT_LIMIT
+      - INFRA_ERROR
+      - CANCELLED
+    Credentials:
+      type: object
+      properties:
+        username:
+          type: string
+          pattern: ^[A-Za-z0-9_]{3,32}$
+        password:
+          type: string
+          format: password
+          description: At least 12 characters, at most 72 UTF-8 bytes; not retained
+            in plaintext.
+      required:
+      - username
+      - password
+    Session:
+      type: object
+      properties:
+        id: *id012
+        username: *id009
+        role:
+          type: string
+          enum:
+          - USER
+          - ADMIN
+        csrf: *id009
+      required:
+      - id
+      - username
+      - role
+      - csrf
+    CaseSpec:
+      type: object
+      properties:
+        input:
+          type: string
+          description: At most 4096 UTF-8 bytes.
+        expected:
+          type: string
+          description: At most 8192 UTF-8 bytes. Exact bytes compared, normalizing
+            CRLF to LF only.
+      required:
+      - input
+      - expected
+    Submission:
+      type: object
+      properties:
+        language:
+          $ref: '#/components/schemas/Language'
+        source:
+          type: string
+          description: 'At most 32768 UTF-8 bytes. Fixed entrypoint: Main.java, main.py,
+            main.cpp or main.js. Standard libraries only.'
+        tests:
+          type: array
+          minItems: 1
+          maxItems: 3
+          description: Required for a free-form run. Ignored when problem is present; the server resolves the catalog tests.
+          items:
+            $ref: '#/components/schemas/CaseSpec'
+        mode:
+          type: string
+          enum:
+          - RUN
+          - BENCHMARK
+          description: BENCHMARK repeats each case three times in fresh containers.
+        problem:
+          type:
+          - string
+          - 'null'
+          pattern: ^[a-z0-9-]{1,64}$
+          description: Optional challenge slug. When present, mode must be RUN and the server ignores submitted tests, replacing them with the catalog's visible and hidden tests.
+      required:
+      - language
+      - source
+      - mode
+    Problem:
+      type: object
+      properties:
+        slug:
+          type: string
+          pattern: ^[a-z0-9-]{1,64}$
+        title:
+          type: string
+        difficulty:
+          type: string
+          enum: [EASY, MEDIUM, HARD]
+        description:
+          type: string
+        starterCode:
+          type: object
+          additionalProperties:
+            type: string
+          description: Starter source keyed by JAVA, PYTHON, CPP, and JAVASCRIPT.
+        publicTests:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseSpec'
+      required: [slug, title, difficulty, description, starterCode, publicTests]
+    JobAccepted:
+      type: object
+      properties:
+        id: *id012
+        replayed: *id010
+      required:
+      - id
+      - replayed
+    JobSummary:
+      type: object
+      properties:
+        id: *id012
+        submission_id: *id012
+        owner_id: *id012
+        state:
+          $ref: '#/components/schemas/JobState'
+        verdict:
+          anyOf:
+          - $ref: '#/components/schemas/Verdict'
+          - type: 'null'
+        generation: *id014
+        worker_id:
+          anyOf:
+          - *id012
+          - type: 'null'
+        event_seq: *id014
+        output_bytes: *id014
+        created_at: *id019
+        finished_at:
+          anyOf:
+          - *id019
+          - type: 'null'
+        deadline: *id019
+        ready_at: *id019
+        language:
+          $ref: '#/components/schemas/Language'
+        mode: *id009
+    Attempt:
+      type: object
+      properties:
+        generation: *id014
+        worker_id: *id012
+        node_id: *id009
+        state: *id009
+        lease_until: *id019
+        deadline: *id019
+        started_at: *id019
+        ended_at:
+          anyOf:
+          - *id019
+          - type: 'null'
+        cleaned: *id010
+        expected_ms: *id014
+        image_id: *id009
+        result:
+          anyOf:
+          - $ref: '#/components/schemas/Result'
+          - type: 'null'
+    Job:
+      allOf:
+      - $ref: '#/components/schemas/JobSummary'
+      - type: object
+        properties:
+          submission:
+            $ref: '#/components/schemas/Submission'
+          attempts:
+            type: array
+            items:
+              $ref: '#/components/schemas/Attempt'
+        required:
+        - submission
+        - attempts
+    Result:
+      type: object
+      properties:
+        verdict:
+          $ref: '#/components/schemas/Verdict'
+        measurement:
+          type: string
+          enum:
+          - cold_compile_and_run
+        output_bytes: *id014
+        cases:
+          type: array
+          items:
+            type: object
+            properties:
+              case: *id014
+              repetition: *id014
+              verdict:
+                $ref: '#/components/schemas/Verdict'
+              elapsed_ms: *id014
+              stdout: *id009
+              stderr: *id009
+              sampled_memory_bytes:
+                type:
+                - integer
+                - 'null'
+                description: Observed sample, not exact peak RSS.
+      required:
+      - verdict
+    Event:
+      type: object
+      properties:
+        seq: *id014
+        kind:
+          type: string
+          enum:
+          - STATUS
+          - LOG
+          - CLEANUP
+        created_at: *id019
+        data: *id018
+      required:
+      - seq
+      - kind
+      - created_at
+      - data
+    Overview:
+      type: object
+      properties:
+        total: *id014
+        active: *id014
+        accepted: *id014
+        p50_ms:
+          type:
+          - number
+          - 'null'
+        p95_ms:
+          type:
+          - number
+          - 'null'
+        p99_ms:
+          type:
+          - number
+          - 'null'
+    Node:
+      type: object
+      properties:
+        id: *id009
+        cpu_budget: *id014
+        memory_budget: *id014
+        slots: *id014
+        speed: &id022
+          type: number
+        load: *id022
+        heartbeat:
+          anyOf:
+          - *id019
+          - type: 'null'
+        quarantined: *id010
+        reserved_slots: *id014
+        workers: *id014
+    NodeSpec:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{1,64}$
+        cpu:
+          type: integer
+          minimum: 1000
+          maximum: 32000
+          description: Millicores reserved for sandbox work.
+        memory:
+          type: integer
+          minimum: 536870912
+          description: Bytes reserved for sandbox work.
+        slots:
+          type: integer
+          minimum: 1
+          maximum: 32
+        speed:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 100
+      required:
+      - id
+      - cpu
+      - memory
+      - slots
+      - speed
+    Registration:
+      type: object
+      properties:
+        worker: *id012
+        images:
+          type: object
+          minProperties: 1
+          maxProperties: 4
+          additionalProperties:
+            type: string
+            pattern: ^sha256:[a-f0-9]{64}$
+          description: Keys are supported Language enum names; values are resolved
+            local immutable image IDs.
+      required:
+      - worker
+      - images
+    Assignment:
+      type: object
+      properties:
+        id: *id012
+        generation: *id014
+        deadline: *id019
+        image_id: *id009
+        language:
+          $ref: '#/components/schemas/Language'
+        source: *id009
+        tests:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseSpec'
+        mode: *id009
+      required:
+      - id
+      - generation
+      - deadline
+      - image_id
+      - language
+      - source
+      - tests
+      - mode
+    LogChunk:
+      type: object
+      properties:
+        sequence:
+          type: integer
+          minimum: 1
+        stream:
+          type: string
+          enum:
+          - stdout
+          - stderr
+          - system
+        text:
+          type: string
+          description: At most 4096 UTF-8 bytes.
+      required:
+      - sequence
+      - stream
+      - text

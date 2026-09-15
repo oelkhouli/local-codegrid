@@ -1,0 +1,168 @@
+name: local-codegrid
+x-worker: &worker
+  image: local-codegrid/worker:1
+  build: {context: ., dockerfile: backend/Dockerfile, target: worker}
+  restart: unless-stopped
+  environment: &worker-env
+    API_URL: http://api:8080
+    NODE_TOKEN: ${NODE_TOKEN:?Run ./codegrid up to initialize credentials}
+    NODE_ID: ${NODE_ID:-local}
+    CODEGRID_ENGINE: docker
+    DOCKER_HOST: unix:///var/run/docker.sock
+    LEDGER_PATH: /ledger
+  volumes:
+    - ${ENGINE_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+    - node-ledger:/ledger
+  read_only: true
+  tmpfs: [/tmp:size=33554432]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true", "label=disable"]
+  mem_limit: 256m
+  cpus: 0.5
+  pids_limit: 128
+  networks: [control]
+  depends_on:
+    api: {condition: service_healthy}
+  healthcheck:
+    test: [CMD, curl, --fail, --silent, http://localhost:9102/health]
+    interval: 5s
+    timeout: 3s
+    retries: 12
+    start_period: 60s
+services:
+  postgres:
+    image: docker.io/library/postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0
+    environment:
+      POSTGRES_DB: codegrid
+      POSTGRES_USER: codegrid
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Run setup}
+      CODEGRID_DB_PASSWORD: ${DATABASE_PASSWORD:?Run setup}
+    volumes: [postgres-data:/var/lib/postgresql/data, ./infra/postgres-init.sh:/docker-entrypoint-initdb.d/10-codegrid.sh:ro]
+    command: [postgres, -c, shared_buffers=64MB, -c, max_connections=60]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    networks: [data]
+    healthcheck: {test: [CMD-SHELL, "pg_isready -U codegrid -d codegrid"], interval: 3s, timeout: 3s, retries: 20}
+    restart: unless-stopped
+  redis:
+    image: docker.io/library/redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
+    environment: {REDIS_PASSWORD: "${REDIS_PASSWORD:?Run setup}"}
+    command: [/bin/sh, -c, 'exec redis-server --requirepass "$${REDIS_PASSWORD}" --maxmemory 32mb --maxmemory-policy noeviction --appendonly yes --appendfsync everysec']
+    volumes: [redis-data:/data]
+    mem_limit: 96m
+    cpus: 0.25
+    pids_limit: 32
+    networks: [data]
+    healthcheck: {test: [CMD-SHELL, 'REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli ping'], interval: 3s, timeout: 3s, retries: 20}
+    restart: unless-stopped
+  api:
+    image: local-codegrid/api:1
+    build: {context: ., dockerfile: backend/Dockerfile, target: api}
+    environment:
+      DATABASE_USER: codegrid_app
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Run setup}
+      NODE_TOKEN: ${NODE_TOKEN}
+      NODE_ID: ${NODE_ID:-local}
+      NODE_CPU: ${NODE_CPU:-2000}
+      NODE_MEMORY: ${NODE_MEMORY:-1073741824}
+      NODE_SLOTS: ${NODE_SLOTS:-2}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://127.0.0.1:8080}
+    networks: [data, control, edge]
+    read_only: true
+    tmpfs: [/tmp:size=33554432]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 384m
+    cpus: 1.0
+    pids_limit: 128
+    restart: unless-stopped
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck: {test: [CMD, curl, --fail, --silent, http://localhost:8080/api/health], interval: 3s, timeout: 3s, retries: 30, start_period: 30s}
+  worker: *worker
+  reaper:
+    <<: *worker
+    environment:
+      <<: *worker-env
+      WORKER_MODE: reaper
+  web:
+    image: local-codegrid/web:1
+    build: {context: ., dockerfile: frontend/Dockerfile}
+    ports: ["127.0.0.1:${WEB_PORT:-8080}:8080"]
+    networks: [edge, ingress]
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 64
+    read_only: true
+    tmpfs: [/var/cache/nginx, /var/run, /tmp]
+    restart: unless-stopped
+    depends_on: {api: {condition: service_healthy}}
+    healthcheck: {test: [CMD, wget, --quiet, --spider, http://127.0.0.1:8080/], interval: 5s, timeout: 3s, retries: 10}
+  prometheus:
+    image: docker.io/prom/prometheus:latest@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0
+    volumes: [./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro, prometheus-data:/prometheus]
+    command: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.retention.time=7d, --storage.tsdb.retention.size=256MB]
+    networks: [control, observability]
+    mem_limit: 192m
+    cpus: 0.5
+    pids_limit: 64
+    restart: unless-stopped
+  grafana:
+    image: docker.io/grafana/grafana:latest@sha256:f772d434e8fab0049deb2b1b30abd43342bcfca1537614aa8d36080232cf4283
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    ports: ["127.0.0.1:3000:3000"]
+    volumes: [grafana-data:/var/lib/grafana, ./infra/grafana/provisioning:/etc/grafana/provisioning:ro, ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro]
+    networks: [observability, ingress]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+  tests:
+    profiles: [test]
+    build: {context: ., dockerfile: backend/Dockerfile, target: tests}
+    volumes: ["${ENGINE_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock"]
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      TESTCONTAINERS_HOST_OVERRIDE: host.docker.internal
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    networks: [test]
+  runner-java:
+    profiles: [build]
+    image: local-codegrid/runner-java:1
+    build: {context: ., dockerfile: runners/Dockerfile.java}
+  runner-python:
+    profiles: [build]
+    image: local-codegrid/runner-python:1
+    build: {context: ., dockerfile: runners/Dockerfile.python}
+  runner-cpp:
+    profiles: [build]
+    image: local-codegrid/runner-cpp:1
+    build: {context: ., dockerfile: runners/Dockerfile.cpp}
+  runner-javascript:
+    profiles: [build]
+    image: local-codegrid/runner-javascript:1
+    build: {context: ., dockerfile: runners/Dockerfile.javascript}
+volumes:
+  postgres-data:
+  redis-data:
+  node-ledger:
+  prometheus-data:
+  grafana-data:
+networks:
+  data: {internal: true}
+  control: {internal: true}
+  edge: {internal: true}
+  observability: {internal: true}
+  ingress: {}
+  test: {}

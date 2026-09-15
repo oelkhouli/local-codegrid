@@ -1,0 +1,16 @@
+**/target/
+**/node_modules/
+**/dist/
+**/test-results/
+**/playwright-report/
+.idea/
+.vscode/
+*.iml
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+artifacts/
+**/__pycache__/
+*.py[cod]

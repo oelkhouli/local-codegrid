@@ -1,0 +1,26 @@
+# Development tests only. This service is NOT an untrusted-code sandbox.
+name: local-codegrid
+services:
+  domain-tests:
+    # Maven 3.9.11 / Temurin 21, pinned multi-architecture image index.
+    image: docker.io/library/maven:3.9.11-eclipse-temurin-21@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237
+    working_dir: /work
+    entrypoint: ["/bin/sh", "/source/scripts/run-domain-tests.sh"]
+    command: ["test"]
+    environment:
+      MAVEN_OPTS: "-Xmx256m"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 2.0
+    mem_limit: 1g
+    pids_limit: 256
+    volumes:
+      - .:/source:ro,Z
+      - maven-cache:/maven-cache
+    tmpfs:
+      - /work:size=67108864
+      - /tmp:size=67108864
+
+volumes:
+  maven-cache:
