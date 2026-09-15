@@ -15,6 +15,6 @@ The complete reference implementation is supplied. To learn it, work through eac
 | 9 | Final: metrics, security and load experiments | Real sandbox/fault/browser suites pass; publish 1,000-observation latency sample and rejection counts; compare one/two slots without changing workload. |
 | 10 | Final: operating recovery and recruiter demo | Public CI runs, secrets stay out of git/artifacts, backup can restore into empty DB, five-minute demo and all 15 explanation prompts completed. |
 
-A realistic student MVP is weeks 1–4 with Python only, one worker, one test case and the essential sandbox checks. The supplied final reference adds all four languages, bounded benchmark mode, crash recovery, scheduling, security tests, observability and lessons. Multi-host setup is optional for the demonstration if no second computer is available; same-host replicas still exercise distributed processes and shared-resource concurrency.
+A realistic student MVP is weeks 1–4 with Python only, one worker, one test case and the essential sandbox checks. The supplied final reference adds all four languages, bounded benchmark mode, crash recovery, scheduling, security tests, observability. Multi-host setup is optional for the demonstration if no second computer is available; same-host replicas still exercise distributed processes and shared-resource concurrency.
 
 The completion criteria describe evidence to collect, not a claim that all deployment experiments have already been performed in the author's build environment. Track actual runs in [verification](verification.md).

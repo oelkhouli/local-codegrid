@@ -7,4 +7,3 @@ RUN npm run build
 FROM docker.io/library/nginx:stable-alpine@sha256:dc5069ad14f19660b141b21236140b91656bf89bbc3e2417c70ae650cd66104c
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /build/dist /usr/share/nginx/html
-COPY docs/lessons /usr/share/nginx/html/lessons

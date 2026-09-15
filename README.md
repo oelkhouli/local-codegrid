@@ -2,7 +2,7 @@
 
 A self-hosted code execution lab: submit Java, Python, C++, or JavaScript, watch live output, compare test results, and investigate scheduling and failure recovery on your own hardware.
 
-**Local runtime. No API keys, subscriptions, cloud accounts, or paid services.** The application, database, cache, compilers, dashboards, and lessons run locally. The first build downloads public open-source dependencies; subsequent execution needs no internet. GitHub Actions is optional development CI, using standard runners for this public repository.
+**Local runtime. No API keys, subscriptions, cloud accounts, or paid services.** The application, database, cache, compilers, and dashboards run locally. The first build downloads public open-source dependencies; subsequent execution needs no internet. GitHub Actions is optional development CI, using standard runners for this public repository.
 
 ## Launch
 
@@ -31,7 +31,7 @@ The launcher generates private local secrets, builds all four compiler images, s
 - Hardware budgets shared across worker replicas, load/history scheduling, a shared file-lock ledger, and an independent cleanup process. Stale attempts retain reservations until cleanup is confirmed.
 - One disposable sandbox per test and repetition: fixed image and commands, unprivileged UID, dropped capabilities, seccomp, no network or host mounts, read-only root, bounded CPU/memory/processes/tmpfs/files/output, and layered wall timeouts.
 - Cookie sessions, BCrypt passwords, CSRF and WebSocket origin checks, ownership checks, rate limits, audit events, and node credentials.
-- Ordered, durable WebSocket log replay; run history, result details, cold-run benchmarking, worker budgets, and 15 lessons in the interface.
+- Ordered, durable WebSocket log replay; run history, result details, cold-run benchmarking, and worker budgets.
 - A PostgreSQL-backed challenge catalog with starter code for all four languages, visible examples, and server-controlled hidden tests. The starter set includes FizzBuzz, palindrome, factorial, maximum value, and pair sum; free-form execution remains available.
 - Prometheus and provisioned Grafana panels; unit, PostgreSQL/Redis integration, browser, sandbox, fault-injection, and load-test suites.
 
@@ -61,7 +61,6 @@ Python 3 is needed only for operator test/benchmark scripts, not launch or appli
 | [Threat model](SECURITY.md) | Trust boundaries, controls, remaining risks |
 | [Operations](docs/operations.md) | Start, scale, recover, back up, and add an existing computer |
 | [Demo](docs/demo.md) | A five-minute recruiter walkthrough |
-| [Lessons](docs/lessons/README.md) | Fifteen concepts with implementation references and exercises |
 | [Roadmap and completion criteria](docs/roadmap.md) | A ten-week path through the finished implementation |
 | [Verification](docs/verification.md) | Evidence and unverified deployment paths |
 
@@ -72,7 +71,7 @@ runners/       Fixed compiler images and the in-container phase driver
 infra/         Image digests, database initialization, Prometheus/Grafana
 scripts/       Real-stack security/fault tests and benchmark client
 .github/       Public-repository CI workflow
-docs/         Architecture, OpenAPI, operations, lessons, verification
+docs/         Architecture, OpenAPI, operations, verification
 ```
 
 The original [planning blueprint](docs/blueprint.md) is historical design context. The current implementation and architecture document define the shipped behavior. CodeGrid's original source is MIT licensed; bundled dependencies retain their own [licenses](THIRD_PARTY_NOTICES.md).

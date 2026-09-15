@@ -2,7 +2,7 @@
 
 Status: accepted for the local portfolio implementation.
 
-The first milestone described a learner-owned domain core. The user subsequently requested the completed reference implementation with lessons afterward. The lifecycle implementation and tests remain explicit Java; no workflow engine hides scheduling, retry, fencing, or isolation policy.
+The lifecycle implementation and tests remain explicit Java; no workflow engine hides scheduling, retry, fencing, or isolation policy.
 
 PostgreSQL owns jobs, reservations, leases, attempts and durable events. Redis lists carry disposable assignment hints, with a transactional database outbox, instead of becoming a second durable authority. A lost/duplicate hint is harmless because the API rechecks assignment ownership and generation.
 

@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import Markdown from "react-markdown";
 import {
   api,
   post,
@@ -27,83 +26,6 @@ const millis = (n: number | null | undefined) =>
       : `${(n / 1000).toFixed(2)} s`;
 const when = (s: string) =>
   new Date(s).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-const chapters = [
-  [
-    "01-system-map.md",
-    "The system map",
-    "Follow one submission through the whole platform.",
-  ],
-  [
-    "02-state-and-transactions.md",
-    "State and transactions",
-    "Keep one authoritative final decision.",
-  ],
-  [
-    "03-idempotency.md",
-    "Idempotency and admission",
-    "Make a retried HTTP request safe.",
-  ],
-  [
-    "04-leases-and-fencing.md",
-    "Leases and fencing",
-    "Understand why an expired worker cannot win.",
-  ],
-  [
-    "05-scheduling.md",
-    "Hardware-aware scheduling",
-    "Compare estimates, capacity and fairness.",
-  ],
-  [
-    "06-retries-and-outbox.md",
-    "Retries and the outbox",
-    "Recover without pretending delivery happens once.",
-  ],
-  [
-    "07-sandbox.md",
-    "The execution boundary",
-    "Follow every restriction to its enforcement point.",
-  ],
-  [
-    "08-cleanup.md",
-    "Crashes and cleanup",
-    "Separate logical ownership from physical processes.",
-  ],
-  [
-    "09-security.md",
-    "Authentication and authorization",
-    "Trace sessions, CSRF, ownership and rate limits.",
-  ],
-  [
-    "10-live-logs.md",
-    "Durable live logs",
-    "Reconnect without losing persisted events.",
-  ],
-  [
-    "11-data-and-cache.md",
-    "Data and caching",
-    "Read the indexes and failure behavior.",
-  ],
-  [
-    "12-metrics.md",
-    "Measurements that mean something",
-    "Interpret throughput and latency percentiles.",
-  ],
-  [
-    "13-testing.md",
-    "Testing and fault injection",
-    "Prove the important failure cases.",
-  ],
-  [
-    "14-delivery.md",
-    "Compose, CI and local operations",
-    "Launch, scale, back up and troubleshoot.",
-  ],
-  [
-    "15-interview.md",
-    "Explain and defend the project",
-    "Practice an honest technical walkthrough.",
-  ],
-];
 function Badge({ state }: { state: string }) {
   return (
     <span
@@ -246,8 +168,6 @@ export default function App() {
     [events, setEvents] = useState<LogEvent[]>([]),
     [connected, setConnected] = useState(false),
     [resultTab, setResultTab] = useState("logs");
-  const [chapter, setChapter] = useState<string | null>(null),
-    [lesson, setLesson] = useState("");
   const retry = useRef<{ payload: string; key: string } | null>(null),
     logBox = useRef<HTMLPreElement>(null),
     numbers = useRef<HTMLPreElement>(null);
@@ -272,8 +192,6 @@ export default function App() {
     setConnected(false);
     setTab("workspace");
     setResultTab("logs");
-    setChapter(null);
-    setLesson("");
   }
   useEffect(() => {
     api<User>("/api/session")
@@ -386,25 +304,6 @@ export default function App() {
   useEffect(() => {
     if (logBox.current) logBox.current.scrollTop = logBox.current.scrollHeight;
   }, [events]);
-  useEffect(() => {
-    if (!chapter) return;
-    let alive = true;
-    setLesson("Loading lesson…");
-    fetch("/lessons/" + chapter)
-      .then((r) => {
-        if (!r.ok) throw new Error("Lesson unavailable");
-        return r.text();
-      })
-      .then((t) => {
-        if (alive) setLesson(t);
-      })
-      .catch((e) => {
-        if (alive) setLesson((e as Error).message);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [chapter]);
   async function run() {
     const epoch = sessionEpoch.current;
     setBusy(true);
@@ -524,7 +423,6 @@ export default function App() {
             ["workspace", "⌘", "Workspace"],
             ["runs", "≡", "Run history"],
             ["workers", "▦", "Workers"],
-            ["learn", "◇", "Learning path"],
           ].map(([key, icon, label]) => (
             <button
               key={key}
@@ -584,9 +482,7 @@ export default function App() {
             Local CodeGrid <span>/</span>{" "}
             {tab === "runs"
               ? "Run history"
-              : tab === "learn"
-                ? "Learning path"
-                : tab === "workers"
+              : tab === "workers"
                   ? "Workers"
                   : "Workspace"}
           </div>
@@ -600,27 +496,21 @@ export default function App() {
               <p className="eyebrow">
                 {tab === "workspace"
                   ? "BUILD. RUN. UNDERSTAND."
-                  : tab === "learn"
-                    ? "UNDER THE HOOD"
-                    : "YOUR LOCAL SYSTEM"}
+                  : "YOUR LOCAL SYSTEM"}
               </p>
               <h1>
                 {tab === "workspace"
                   ? "Execution workspace"
                   : tab === "runs"
                     ? "Every run, accounted for."
-                    : tab === "workers"
-                      ? "The machines behind your runs."
-                      : "Learn what you built."}
+                    : "The machines behind your runs."}
               </h1>
               <p className="muted">
                 {tab === "workspace"
                   ? "A small program. A clear result. The whole journey in view."
                   : tab === "runs"
                     ? "Inspect results and revisit earlier submissions."
-                    : tab === "workers"
-                      ? "Shared node budgets keep worker replicas within the available capacity."
-                      : "Follow the code, reproduce the failures and practice explaining the decisions."}
+                    : "Shared node budgets keep worker replicas within the available capacity."}
               </p>
             </div>
             {tab === "workspace" && (
@@ -643,7 +533,6 @@ export default function App() {
               </button>
             </div>
           )}
-          {tab !== "learn" && (
             <div className="stats">
               <Stat
                 label="Runs in 24 hours"
@@ -666,7 +555,6 @@ export default function App() {
                 note="Your completed runs · 24 hours"
               />
             </div>
-          )}
           {tab === "workspace" && (
             <>
               <section
@@ -1183,47 +1071,6 @@ export default function App() {
               ))}
             </div>
           )}
-          {tab === "learn" &&
-            (chapter ? (
-              <article className="panel lesson">
-                <button
-                  className="text-button"
-                  onClick={() => setChapter(null)}
-                >
-                  ← All lessons
-                </button>
-                <Markdown skipHtml>{lesson}</Markdown>
-              </article>
-            ) : (
-              <>
-                <div className="learning-intro">
-                  <span>15 lessons</span>
-                  <p>
-                    Read the implementation, then close the lesson and explain
-                    the invariant in your own words. Each lesson includes a code
-                    trail, a failure scenario and a practical exercise.
-                  </p>
-                </div>
-                <div className="chapter-grid">
-                  {chapters.map(([file, title, description], i) => (
-                    <button
-                      className="panel chapter-card"
-                      key={file}
-                      onClick={() => setChapter(file)}
-                    >
-                      <span className="chapter-number">
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      <div>
-                        <h2>{title}</h2>
-                        <p>{description}</p>
-                      </div>
-                      <span className="chapter-arrow">↗</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            ))}
           <footer>
             CodeGrid <span>·</span> A local distributed execution lab{" "}
             <span>·</span> CPU, memory, process, filesystem, output and network
